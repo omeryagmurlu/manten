@@ -1,0 +1,40 @@
+noise_model:
+  _target_: diffusers.UNet2DModel
+  sample_size: 128
+  in_channels: 3
+  out_channels: 3
+  layers_per_block: 2
+  block_out_channels: [128, 128, 256, 256, 512, 512]
+  down_block_types:
+    - DownBlock2D
+    - DownBlock2D
+    - DownBlock2D
+    - DownBlock2D
+    - AttnDownBlock2D
+    - DownBlock2D
+  up_block_types:
+    - UpBlock2D
+    - AttnUpBlock2D
+    - UpBlock2D
+    - UpBlock2D
+    - UpBlock2D
+    - UpBlock2D
+
+noise_scheduler:
+  _target_: diffusers.DDPMScheduler
+  num_train_timesteps: 1000
+
+accelerator:
+  _target_: accelerate.Accelerator
+  mixed_precision: True
+  gradient_accumulation_steps: 1
+  log_with: wandb
+
+accelerator_init_trackers:
+  project_name: manten
+  init_kwargs:
+    wandb:
+      entity: "omeryagmurlu"
+
+num_epochs: 80
+output_dir: "logs"
