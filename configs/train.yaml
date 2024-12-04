@@ -1,32 +1,14 @@
-noise_model:
-  _target_: diffusers.UNet2DModel
-  sample_size: 128
-  in_channels: 3
-  out_channels: 3
-  layers_per_block: 2
-  block_out_channels: [128, 128, 256, 256, 512, 512]
-  down_block_types:
-    - DownBlock2D
-    - DownBlock2D
-    - DownBlock2D
-    - DownBlock2D
-    - AttnDownBlock2D
-    - DownBlock2D
-  up_block_types:
-    - UpBlock2D
-    - AttnUpBlock2D
-    - UpBlock2D
-    - UpBlock2D
-    - UpBlock2D
-    - UpBlock2D
-
-noise_scheduler:
-  _target_: diffusers.DDPMScheduler
-  num_train_timesteps: 1000
+project:
+  output_dir: "logs"
+training:
+  num_epochs: 80
+  sanity_check: True
+  test_every_n_epochs: 1
+  seed: 42
 
 accelerator:
   _target_: accelerate.Accelerator
-  mixed_precision: True
+  mixed_precision: bf16
   gradient_accumulation_steps: 1
   log_with: wandb
 
@@ -36,5 +18,114 @@ accelerator_init_trackers:
     wandb:
       entity: "omeryagmurlu"
 
-num_epochs: 80
-output_dir: "logs"
+_diffusion_timesteps: 25
+_embedding_dim: 192
+_num_history: 1 # kinda like 0, that part of the code is a mess
+_relative_action: True
+_rotation_parametrization: "6D"
+agent:
+  _target_: manten.agents.three_dda_agent.ThreeDDAAgent
+  position_noise_scheduler:
+    _target_: diffusers.schedulers.DDPMScheduler
+    num_train_timesteps: ${_diffusion_timesteps}
+    beta_schedule: scaled_linear
+    prediction_type: epsilon
+  rotation_noise_scheduler:
+    _target_: diffusers.schedulers.DDPMScheduler
+    num_train_timesteps: ${_diffusion_timesteps}
+    beta_schedule: squaredcos_cap_v2
+    prediction_type: epsilon
+  rotation_parametrization:
+    _target_: manten.agents.three_dda_agent.RotationParametrization
+    rotation_parametrization: ${_rotation_parametrization}
+    quaternion_format: wxyz
+  position_normalization:
+    _target_: manten.agents.three_dda_agent.PositionNormalization
+    gripper_loc_bounds: null # TODO get bounds somehow, this'll be partial and come from dataset
+  encoder:
+    _target_: manten.networks.three_dda.encoder.Encoder
+    backbone: "clip"
+    image_size: [256, 256]
+    embedding_dim: ${_embedding_dim}
+    num_sampling_level: 1
+    nhist: ${_num_history}
+    num_vis_ins_attn_layers: 2
+    fps_subsampling_factor: 3
+  noise_model:
+    _target_: manten.networks.three_dda.head.DiffusionHead
+    embedding_dim: ${_embedding_dim}
+    use_instruction: True
+    nhist: ${_num_history}
+    lang_enhanced: True
+    rotation_parametrization: ${_rotation_parametrization}
+  metric:
+    _target_: manten.agents.metrics.three_dda_metric.ThreeDDAMetric
+  num_history: ${_num_history}
+  relative: ${_relative_action}
+  use_instruction: True
+  n_diffusion_steps: ${_diffusion_timesteps}
+
+_lr: 0.0003
+_weight_decay: 0.005
+optimizer_configurator:
+  _target_: manten.utils.optimizer_configurator.OptimizerConfigurator
+  default_params_config:
+    lr: ${_lr}
+    weight_decay: ${_weight_decay}
+  params_configs:
+    - contains_substrings:
+        - "bias"
+        - "LayerNorm.weight"
+        - "LayerNorm.bias"
+      lr: ${_lr}
+      weight_decay: 0.0
+optimizer:
+  _target_: torch.optim.AdamW
+  lr: ${_lr}
+  weight_decay: ${_weight_decay}
+lr_scheduler:
+  _target_: torch.optim.lr_scheduler.ConstantLR
+  factor: 1.0
+
+# _training_calvin_data: ./data/calvin/packaged_D_D/training
+# _validation_calvin_data: ./data/calvin/packaged_D_D/validation
+# _instructions: instructions/calvin_task_D_D/
+
+_training_calvin_data: ./data/calvin/packaged_debug/training
+_validation_calvin_data: ./data/calvin/packaged_debug/validation
+_instructions: ./data/calvin/instructions/calvin_task_debug_D/
+
+_batch_size: 2
+_num_workers: 0
+datamodule:
+  _target_: manten.utils.dummy_datamodule.DummyDataModule
+  train_dataloader: &_train_dataloader
+    _target_: torch.utils.data.DataLoader
+    dataset: &_train_dataloader_dataset
+      _target_: manten.data.dataset_calvin.CalvinDataset
+      root: ${_training_calvin_data}
+      instructions: ${_instructions}
+      max_episode_length: 5000
+      cache_size: 0
+      max_episodes_per_task: -1
+      cameras: [front, wrist]
+      training: True
+      image_rescale: [0.75, 1.25]
+      dense_interpolation: 1
+      interpolation_length: 20
+      relative_action: ${_relative_action}
+    collate_fn:
+      _target_: manten.data.dataset_calvin.traj_collate_fn
+      _partial_: true
+    batch_size: ${_batch_size}
+    shuffle: True
+    num_workers: ${_num_workers}
+    pin_memory: True
+    drop_last: True
+  test_dataloader:
+    <<: *_train_dataloader
+    dataset:
+      <<: *_train_dataloader_dataset
+      root: ${_validation_calvin_data}
+      training: False
+    drop_last: False

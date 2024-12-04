@@ -175,3 +175,6 @@ configs/local/default.yaml
 /data/
 /logs/
 .env
+.ruff_cache
+outputs/
+wandb

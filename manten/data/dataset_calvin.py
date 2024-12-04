@@ -1,6 +1,7 @@
 from collections import defaultdict, Counter
 import itertools
 import math
+import pickle
 import random
 from pathlib import Path
 import torch
@@ -9,6 +10,44 @@ from time import time
 
 from manten.data.utils import Resize, TrajectoryInterpolator, loader
 from manten.utils.utils_with_calvin import to_relative_action, convert_rotation
+from manten.utils.logging import get_logger
+
+logger = get_logger(__name__)
+
+
+def load_instructions(instructions, split):
+    instructions = pickle.load(open(f"{instructions}/{split}.pkl", "rb"))["embeddings"]
+    return instructions
+
+
+def traj_collate_fn(batch):
+    keys = [
+        "trajectory",
+        "trajectory_mask",
+        "rgbs",
+        "pcds",
+        "curr_gripper",
+        "curr_gripper_history",
+        "action",
+        "instr",
+    ]
+    ret_dict = {
+        key: torch.cat(
+            [
+                item[key].float() if key != "trajectory_mask" else item[key]
+                for item in batch
+            ]
+        )
+        for key in keys
+    }
+
+    ret_dict["task"] = []
+    ret_dict["annotation_id"] = torch.cat(
+        [torch.tensor(item["annotation_id"]) for item in batch]
+    )
+    for item in batch:
+        ret_dict["task"] += item["task"]
+    return ret_dict
 
 
 class CalvinDataset(Dataset):
@@ -20,7 +59,12 @@ class CalvinDataset(Dataset):
         root,
         instructions=None,
         # dataset specification
-        taskvar=[("close_door", 0)],
+        taskvar=[
+            ("A", 0),
+            ("B", 0),
+            ("C", 0),
+            ("D", 0),
+        ],
         max_episode_length=5,
         cache_size=0,
         max_episodes_per_task=100,
@@ -30,7 +74,7 @@ class CalvinDataset(Dataset):
         training=True,
         image_rescale=(1.0, 1.0),
         # for trajectories
-        return_low_lvl_trajectory=False,
+        return_low_lvl_trajectory=True,
         dense_interpolation=False,
         interpolation_length=100,
         relative_action=True,
@@ -55,6 +99,10 @@ class CalvinDataset(Dataset):
                 use=dense_interpolation, interpolation_length=interpolation_length
             )
 
+        if isinstance(instructions, (Path, str)):
+            instructions = load_instructions(
+                instructions, split="training" if training else "validation"
+            )
         # Keep variations and useful instructions
         self._instructions = instructions
         self._num_vars = Counter()  # variations of the same task
@@ -95,7 +143,7 @@ class CalvinDataset(Dataset):
             self._episodes += eps
             self._num_episodes += len(eps)
 
-        print(f"Created dataset from {root} with {self._num_episodes}")
+        logger.info(f"Created dataset from {root} with {self._num_episodes}")
 
     def __getitem__(self, episode_id):
         """
@@ -151,7 +199,7 @@ class CalvinDataset(Dataset):
         rgbs = self._unnormalize_rgb(rgbs)
 
         # Get action tensors for respective frame ids
-        action = torch.cat([torch.from_numpy(episode[2][i]) for i in frame_ids])
+        action = torch.cat([episode[2][i] for i in frame_ids])
 
         # Sample one instruction feature
         if self._instructions is not None:
@@ -162,7 +210,7 @@ class CalvinDataset(Dataset):
             instr = torch.zeros((rgbs.shape[0], 53, 512))
 
         # Get gripper tensors for respective frame ids
-        gripper = torch.cat([torch.from_numpy(episode[4][i]) for i in frame_ids])
+        gripper = torch.cat([episode[4][i] for i in frame_ids])
 
         # gripper history
         if len(episode) > 7:
@@ -170,12 +218,8 @@ class CalvinDataset(Dataset):
         else:
             gripper_history = torch.stack(
                 [
-                    torch.cat(
-                        [torch.from_numpy(episode[4][max(0, i - 2)]) for i in frame_ids]
-                    ),
-                    torch.cat(
-                        [torch.from_numpy(episode[4][max(0, i - 1)]) for i in frame_ids]
-                    ),
+                    torch.cat([episode[4][max(0, i - 2)] for i in frame_ids]),
+                    torch.cat([episode[4][max(0, i - 1)] for i in frame_ids]),
                     gripper,
                 ],
                 dim=1,
@@ -185,20 +229,11 @@ class CalvinDataset(Dataset):
         traj, traj_lens = None, 0
         if self._return_low_lvl_trajectory:
             if len(episode) > 5:
-                traj_items = [
-                    self._interpolate_traj(torch.from_numpy(episode[5][i]))
-                    for i in frame_ids
-                ]
+                traj_items = [self._interpolate_traj(episode[5][i]) for i in frame_ids]
             else:
                 traj_items = [
                     self._interpolate_traj(
-                        torch.cat(
-                            [
-                                torch.from_numpy(episode[4][i]),
-                                torch.from_numpy(episode[2][i]),
-                            ],
-                            dim=0,
-                        )
+                        torch.cat([episode[4][i], episode[2][i]], dim=0)
                     )
                     for i in frame_ids
                 ]
@@ -267,6 +302,9 @@ class CalvinDataset(Dataset):
                 dim=-1,
             )
 
+        # assert that all elements of episode[6] are the same
+        assert all(anno == episode[6][0] for anno in episode[6])
+
         ret_dict = {
             "task": [task for _ in frame_ids],
             "rgbs": rgbs,  # e.g. tensor (n_frames, n_cam, 3+1, H, W)
@@ -275,6 +313,7 @@ class CalvinDataset(Dataset):
             "instr": instr,  # a (n_frames, 53, 512) tensor
             "curr_gripper": gripper,
             "curr_gripper_history": gripper_history,
+            "annotation_id": [episode[6][0] for _ in frame_ids],
         }
         if self._return_low_lvl_trajectory:
             ret_dict.update(

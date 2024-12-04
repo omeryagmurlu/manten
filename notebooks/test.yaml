@@ -1,0 +1,15 @@
+root:
+  blob1: &_blob1
+    _kek_: 1
+    lol: 2
+    nested: &_nested1
+      n1: 1
+      n2: 2
+      thisisonlytruein1: True
+    thisisonlytruein2: False
+  blob2:
+    <<: *_blob1
+    nested:
+      <<: *_nested1
+      thisisonlytruein1: False
+    thisisonlytruein2: True

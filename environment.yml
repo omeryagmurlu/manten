@@ -1,0 +1,30 @@
+name: manten
+channels:
+  - pytorch
+  - nvidia
+  - dglteam/label/th24_cu121
+  - conda-forge
+dependencies:
+  - python=3.10
+
+  - accelerate
+
+  - pytorch
+  - torchvision
+  - torchaudio
+  - pytorch-cuda=12.1
+
+  - dgl # requires torch<=2.4.0, but that's fine
+
+  - pip:
+      - hydra-core
+      - hydra-colorlog
+      - wandb
+      - tqdm
+      - rootutils
+      - einops
+
+      - diffusers[training]
+      - transformers
+      - git+https://github.com/openai/CLIP.git
+      - blosc
