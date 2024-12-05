@@ -28,18 +28,14 @@ class RotaryPositionEncoding(nn.Module):
 
     @staticmethod
     def embed_rotary(x, cos, sin):
-        x2 = (
-            torch.stack([-x[..., 1::2], x[..., ::2]], dim=-1).reshape_as(x).contiguous()
-        )
+        x2 = torch.stack([-x[..., 1::2], x[..., ::2]], dim=-1).reshape_as(x).contiguous()
         x = x * cos + x2 * sin
         return x
 
     def forward(self, x_position):
         bsize, npoint = x_position.shape
         div_term = torch.exp(
-            torch.arange(
-                0, self.feature_dim, 2, dtype=torch.float, device=x_position.device
-            )
+            torch.arange(0, self.feature_dim, 2, dtype=torch.float, device=x_position.device)
             * (-math.log(10000.0) / (self.feature_dim))
         )
         div_term = div_term.view(1, 1, -1)  # [1, 1, d]
@@ -70,11 +66,9 @@ class RotaryPositionEncoding3D(RotaryPositionEncoding):
         @return:
         """
         bsize, npoint, _ = XYZ.shape
-        x_position, y_position, z_position = XYZ[..., 0:1], XYZ[..., 1:2], XYZ[..., 2:3]
+        (x_position, y_position, z_position) = (XYZ[..., 0:1], XYZ[..., 1:2], XYZ[..., 2:3])
         div_term = torch.exp(
-            torch.arange(
-                0, self.feature_dim // 3, 2, dtype=torch.float, device=XYZ.device
-            )
+            torch.arange(0, self.feature_dim // 3, 2, dtype=torch.float, device=XYZ.device)
             * (-math.log(10000.0) / (self.feature_dim // 3))
         )
         div_term = div_term.view(1, 1, -1)  # [1, 1, d//6]
@@ -86,7 +80,7 @@ class RotaryPositionEncoding3D(RotaryPositionEncoding):
         sinz = torch.sin(z_position * div_term)
         cosz = torch.cos(z_position * div_term)
 
-        sinx, cosx, siny, cosy, sinz, cosz = map(
+        (sinx, cosx, siny, cosy, sinz, cosz) = map(
             lambda feat: torch.stack([feat, feat], -1).view(bsize, npoint, -1),
             [sinx, cosx, siny, cosy, sinz, cosz],
         )
@@ -129,10 +123,7 @@ class LearnedAbsolutePositionEncoding3D(nn.Module):
 class LearnedAbsolutePositionEncoding3Dv2(nn.Module):
     def __init__(self, input_dim, embedding_dim, norm="none"):
         super().__init__()
-        norm_tb = {
-            "none": nn.Identity(),
-            "bn": nn.BatchNorm1d(embedding_dim),
-        }
+        norm_tb = {"none": nn.Identity(), "bn": nn.BatchNorm1d(embedding_dim)}
         self.absolute_pe_layer = nn.Sequential(
             nn.Conv1d(input_dim, embedding_dim, kernel_size=1),
             norm_tb[norm],

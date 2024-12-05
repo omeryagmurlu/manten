@@ -115,7 +115,7 @@ def matrix_to_quaternion(matrix: torch.Tensor) -> torch.Tensor:
         raise ValueError(f"Invalid rotation matrix shape {matrix.shape}.")
 
     batch_dim = matrix.shape[:-2]
-    m00, m01, m02, m10, m11, m12, m20, m21, m22 = torch.unbind(
+    (m00, m01, m02, m10, m11, m12, m20, m21, m22) = torch.unbind(
         matrix.reshape(batch_dim + (9,)), dim=-1
     )
 
@@ -158,9 +158,9 @@ def matrix_to_quaternion(matrix: torch.Tensor) -> torch.Tensor:
     # if not for numerical problems, quat_candidates[i] should be same (up to a sign),
     # forall i; we pick the best-conditioned one (with the largest denominator)
 
-    return quat_candidates[
-        F.one_hot(q_abs.argmax(dim=-1), num_classes=4) > 0.5, :
-    ].reshape(batch_dim + (4,))
+    return quat_candidates[F.one_hot(q_abs.argmax(dim=-1), num_classes=4) > 0.5, :].reshape(
+        batch_dim + (4,)
+    )
 
 
 def _axis_angle_rotation(axis: str, angle: torch.Tensor) -> torch.Tensor:
@@ -215,8 +215,7 @@ def euler_angles_to_matrix(euler_angles: torch.Tensor, convention: str) -> torch
         if letter not in ("X", "Y", "Z"):
             raise ValueError(f"Invalid letter {letter} in convention string.")
     matrices = [
-        _axis_angle_rotation(c, e)
-        for c, e in zip(convention, torch.unbind(euler_angles, -1))
+        _axis_angle_rotation(c, e) for c, e in zip(convention, torch.unbind(euler_angles, -1))
     ]
     # return functools.reduce(torch.matmul, matrices)
     return torch.matmul(torch.matmul(matrices[0], matrices[1]), matrices[2])
@@ -296,13 +295,9 @@ def matrix_to_euler_angles(matrix: torch.Tensor, convention: str) -> torch.Tenso
         central_angle = torch.acos(matrix[..., i0, i0])
 
     o = (
-        _angle_from_tan(
-            convention[0], convention[1], matrix[..., i2], False, tait_bryan
-        ),
+        _angle_from_tan(convention[0], convention[1], matrix[..., i2], False, tait_bryan),
         central_angle,
-        _angle_from_tan(
-            convention[2], convention[1], matrix[..., i0, :], True, tait_bryan
-        ),
+        _angle_from_tan(convention[2], convention[1], matrix[..., i0, :], True, tait_bryan),
     )
     return torch.stack(o, -1)
 

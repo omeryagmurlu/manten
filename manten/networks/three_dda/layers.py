@@ -392,17 +392,13 @@ class SelfAttentionLayer(nn.Module):
         if use_adaln:
             self.adaln = AdaLN(embedding_dim)
 
-    def forward(
-        self, query, diff_ts=None, query_pos=None, value_pos=None, pad_mask=None
-    ):
+    def forward(self, query, diff_ts=None, query_pos=None, value_pos=None, pad_mask=None):
         if diff_ts is not None:
             adaln_query = self.adaln(query, diff_ts)
         else:
             adaln_query = query
         attn_output, _ = self.multihead_attn(
-            query=adaln_query,
-            key=adaln_query,
-            value=adaln_query,
+            query=adaln_query, key=adaln_query, value=adaln_query
         )
         output = query + self.dropout(attn_output)
         output = self.norm(output)
@@ -452,9 +448,7 @@ class FFWRelativeSelfAttentionModule(nn.Module):
                 FeedforwardLayer(embedding_dim, embedding_dim, use_adaln=use_adaln)
             )
 
-    def forward(
-        self, query, diff_ts=None, query_pos=None, context=None, context_pos=None
-    ):
+    def forward(self, query, diff_ts=None, query_pos=None, context=None, context_pos=None):
         output = []
         for i in range(self.num_layers):
             query = self.attn_layers[i](query, query, diff_ts, query_pos, query_pos)
@@ -513,9 +507,7 @@ class FFWRelativeSelfCrossAttentionModule(nn.Module):
                     query, context, diff_ts, cur_query_pos, context_pos
                 )
             # Self attend next
-            query = self.self_attn_layers[i](
-                query, query, diff_ts, query_pos, query_pos
-            )
+            query = self.self_attn_layers[i](query, query, diff_ts, query_pos, query_pos)
             query = self.ffw_layers[i](query, diff_ts)
             output.append(query)
         return output

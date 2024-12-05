@@ -8,7 +8,10 @@ from torchvision.ops import FeaturePyramidNetwork
 from manten.networks.clip import load_clip
 from manten.networks.position_encodings import RotaryPositionEncoding3D
 from manten.networks.resnet import load_resnet18, load_resnet50
-from manten.networks.three_dda.layers import FFWRelativeCrossAttentionModule, ParallelAttention
+from manten.networks.three_dda.layers import (
+    FFWRelativeCrossAttentionModule,
+    ParallelAttention,
+)
 
 
 class Encoder(nn.Module):
@@ -34,11 +37,11 @@ class Encoder(nn.Module):
 
         # Frozen backbone
         if backbone == "resnet50":
-            self.backbone, self.normalize = load_resnet50()
+            (self.backbone, self.normalize) = load_resnet50()
         elif backbone == "resnet18":
-            self.backbone, self.normalize = load_resnet18()
+            (self.backbone, self.normalize) = load_resnet18()
         elif backbone == "clip":
-            self.backbone, self.normalize = load_clip()
+            (self.backbone, self.normalize) = load_clip()
         for p in self.backbone.parameters():
             p.requires_grad = False
 
@@ -117,10 +120,10 @@ class Encoder(nn.Module):
             - goal_gripper_feats: (B, 1, F)
             - goal_gripper_pos: (B, 1, F, 2)
         """
-        goal_gripper_feats, goal_gripper_pos = self._encode_gripper(
+        (goal_gripper_feats, goal_gripper_pos) = self._encode_gripper(
             goal_gripper[:, None], self.goal_gripper_embed, context_feats, context
         )
-        return goal_gripper_feats, goal_gripper_pos
+        return (goal_gripper_feats, goal_gripper_pos)
 
     def _encode_gripper(self, gripper, gripper_embed, context_feats, context):
         """
@@ -201,7 +204,7 @@ class Encoder(nn.Module):
             rgb_feats_pyramid.append(rgb_features_i)
             pcd_pyramid.append(pcd_i)
 
-        return rgb_feats_pyramid, pcd_pyramid
+        return (rgb_feats_pyramid, pcd_pyramid)
 
     def encode_instruction(self, instruction):
         """
@@ -230,9 +233,7 @@ class Encoder(nn.Module):
 
         # Sample points with FPS
         sampled_inds = dgl_geo.farthest_point_sampler(
-            einops.rearrange(context_features, "npts b c -> b npts c").to(
-                torch.float64
-            ),
+            einops.rearrange(context_features, "npts b c -> b npts c").to(torch.float64),
             max(npts // self.fps_subsampling_factor, 1),
             0,
         ).long()
@@ -251,7 +252,7 @@ class Encoder(nn.Module):
             sampled_inds.unsqueeze(-1).unsqueeze(-1).expand(-1, -1, ch, npos)
         )
         sampled_context_pos = torch.gather(context_pos, 1, expanded_sampled_inds)
-        return sampled_context_features, sampled_context_pos
+        return (sampled_context_features, sampled_context_pos)
 
     def vision_language_attention(self, feats, instr_feats):
         feats, _ = self.vl_attention[0](

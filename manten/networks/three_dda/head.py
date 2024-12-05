@@ -2,10 +2,7 @@ import einops
 import torch
 import torch.nn as nn
 
-from manten.networks.position_encodings import (
-    RotaryPositionEncoding3D,
-    SinusoidalPosEmb,
-)
+from manten.networks.position_encodings import RotaryPositionEncoding3D, SinusoidalPosEmb
 from manten.networks.three_dda.layers import (
     FFWRelativeCrossAttentionModule,
     FFWRelativeSelfAttentionModule,
@@ -113,9 +110,7 @@ class DiffusionHead(nn.Module):
                 embedding_dim, num_attn_heads, 2, 1, use_adaln=True
             )
         self.position_predictor = nn.Sequential(
-            nn.Linear(embedding_dim, embedding_dim),
-            nn.ReLU(),
-            nn.Linear(embedding_dim, 3),
+            nn.Linear(embedding_dim, embedding_dim), nn.ReLU(), nn.Linear(embedding_dim, 3)
         )
 
         # # 3. Joint Position
@@ -134,11 +129,9 @@ class DiffusionHead(nn.Module):
         #     nn.Linear(embedding_dim, 7),
         # )
 
-        # 4. Openess
-        self.openess_predictor = nn.Sequential(
-            nn.Linear(embedding_dim, embedding_dim),
-            nn.ReLU(),
-            nn.Linear(embedding_dim, 1),
+        # 4. Openness
+        self.openness_predictor = nn.Sequential(
+            nn.Linear(embedding_dim, embedding_dim), nn.ReLU(), nn.Linear(embedding_dim, 1)
         )
 
     def forward(
@@ -189,7 +182,7 @@ class DiffusionHead(nn.Module):
         traj_feats = einops.rearrange(traj_feats, "b l c -> l b c")
         context_feats = einops.rearrange(context_feats, "b l c -> l b c")
         adaln_gripper_feats = einops.rearrange(adaln_gripper_feats, "b l c -> l b c")
-        pos_pred, rot_pred, joints_pred, openess_pred = self.prediction_head(
+        (pos_pred, rot_pred, joints_pred, openess_pred) = self.prediction_head(
             trajectory[..., :3],
             traj_feats,
             context[..., :3],
@@ -201,7 +194,7 @@ class DiffusionHead(nn.Module):
             instr_feats,
             has_3d,
         )
-        return pos_pred, rot_pred, joints_pred, openess_pred
+        return (pos_pred, rot_pred, joints_pred, openess_pred)
 
     def prediction_head(
         self,
@@ -251,9 +244,7 @@ class DiffusionHead(nn.Module):
         )[-1]
 
         # Self attention among gripper and sampled context
-        features = torch.cat(
-            [gripper_features, sampled_context_features + dim_2d_3d], 0
-        )
+        features = torch.cat([gripper_features, sampled_context_features + dim_2d_3d], 0)
         rel_pos = torch.cat([rel_gripper_pos, sampled_rel_context_pos], 1)
         features = self.self_attn(
             query=features,
@@ -266,9 +257,7 @@ class DiffusionHead(nn.Module):
         num_gripper = gripper_features.shape[0]
 
         # Rotation head
-        rotation, _ = self.predict_rot(
-            features, rel_pos, time_embs, num_gripper, instr_feats
-        )
+        rotation, _ = self.predict_rot(features, rel_pos, time_embs, num_gripper, instr_feats)
 
         # Position head
         position, position_features = self.predict_pos(
@@ -280,11 +269,11 @@ class DiffusionHead(nn.Module):
         #     features, rel_pos, time_embs, num_gripper, instr_feats
         # )
 
-        # Openess head from position head
-        openess = self.openess_predictor(position_features)
+        # Openness head from position head
+        openness = self.openness_predictor(position_features)
 
-        # return position, rotation, joints, openess
-        return position, rotation, 0, openess
+        # return position, rotation, joints, openness
+        return (position, rotation, 0, openness)
 
     def encode_denoising_timestep(self, timestep, curr_gripper_features):
         """

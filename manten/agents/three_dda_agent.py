@@ -1,6 +1,7 @@
 import torch
 import einops
 from manten.agents.base_agent import BaseAgent
+from manten.agents.metrics.trajectory_metric import TrajectoryMetric, TrajectoryStats
 from manten.utils.dda_utils import (
     compute_rotation_matrix_from_ortho6d,
     get_ortho6d_from_rotation_matrix,
@@ -87,7 +88,7 @@ class PositionNormalization:
 
 
 def convert2rel(pcd, curr_gripper):
-    """Convert coordinate system relaative to current gripper."""
+    """Convert coordinate system relative to current gripper."""
     center = curr_gripper[:, -1, :3]  # (batch_size, 3)
     bs = center.shape[0]
     pcd = pcd - center.view(bs, 1, 3, 1, 1)
@@ -109,7 +110,7 @@ class ThreeDDAAgent(BaseAgent):
         num_history=0,
         relative=True,
         use_instruction=True,
-        n_diffusion_steps=10,
+        n_inference_steps=10,
         **kwargs,
     ):
         super().__init__(**kwargs)
@@ -123,57 +124,67 @@ class ThreeDDAAgent(BaseAgent):
         self.num_history = num_history
         self.relative = relative
         self.use_instruction = use_instruction
-        self.n_diffusion_steps = n_diffusion_steps
+        self.n_inference_steps = n_inference_steps
 
     def train_step(self, batch):
-        (
-            gt_trajectory,
-            gt_openness,
-            _,
-            _,
-            conditions,
-        ) = self.process_batch(batch)
+        (gt_trajectory, gt_openness, _, _, conditions) = self.process_batch(batch)
 
         return self.conditional_diffusion_loss(
-            trajectory=torch.cat((gt_trajectory, gt_openness), -1),
-            conditions=conditions,
+            trajectory=torch.cat((gt_trajectory, gt_openness), -1), conditions=conditions
         )
 
+    @torch.no_grad()
     def test_step(self, batch):
-        (
-            gt_trajectory,
-            gt_openness,
-            _,
-            _,
-            conditions,
-        ) = self.process_batch(batch)
+        (gt_trajectory, gt_openness, _, _, conditions) = self.process_batch(batch)
 
         assert torch.is_grad_enabled() is False
 
         return self.conditional_diffusion_loss(
-            trajectory=torch.cat((gt_trajectory, gt_openness), -1),
-            conditions=conditions,
+            trajectory=torch.cat((gt_trajectory, gt_openness), -1), conditions=conditions
         )
 
-    def eval_step(self, batch):
-        (_, _, trajectory_mask, inputs, conditions) = self.process_batch(
-            batch, eval=True
-        )
+    @torch.no_grad()
+    def eval_step(self, batch, compare_gt=False):
+        if compare_gt:
+            if "trajectory" not in batch:
+                raise ValueError("trajectory not found in batch")
+            traj_len = batch["trajectory"].size(1) - 1
+        else:
+            traj_len = 20  # # this is hardcoded but eeeh
+
+        (_, _, trajectory_mask, inputs, conditions) = self.process_batch(batch, eval=True)
 
         B, _, D = inputs["curr_gripper"].shape
         # trajectory_shape = (B, trajectory_mask.size(1), D)
-        trajectory_shape = (B, 20, D)  # this is hardcoded but eeeh
+
+        trajectory_shape = (B, traj_len, D)
         trajectory_device = inputs["curr_gripper"].device
         trajectory_dtype = inputs["curr_gripper"].dtype
 
-        complete_traj = self.conditional_sample(
+        pred_complete_traj = self.conditional_sample(
             conditions=conditions,
             shape=trajectory_shape,
             device=trajectory_device,
             dtype=trajectory_dtype,
         )
 
-        return self.reverse_input_transformations(complete_traj)
+        pred_complete_traj = self.reverse_input_transformations(pred_complete_traj)
+        pred_pos = pred_complete_traj[..., :3]
+        pred_quat = pred_complete_traj[..., 3:7]
+        pred_openness = pred_complete_traj[..., 7:8]
+
+        if compare_gt:
+            gt_traj = batch["trajectory"][:, 1:]
+            traj_metric = TrajectoryMetric()
+            traj_metric.feed(
+                ground=(gt_traj[..., :3], gt_traj[..., 3:7], gt_traj[..., 7:8]),
+                prediction=(pred_pos, pred_quat, pred_openness),
+            )
+        else:
+            traj_metric = TrajectoryStats()
+            traj_metric.feed(stats=(pred_pos, pred_quat, pred_openness))
+
+        return (pred_complete_traj, traj_metric)
 
     def conditional_diffusion_loss(self, conditions, trajectory):
         x_0 = trajectory
@@ -198,19 +209,13 @@ class ThreeDDAAgent(BaseAgent):
             x_0[..., 3:9], epsilon_t[..., 3:9], timesteps
         )
 
-        epsilon_t_pos_pred, epsilon_t_rot_pred, _, openness_pred = self.noise_model(
-            trajectory=torch.cat((x_t_pos, x_t_rot), -1),
-            timestep=timesteps,
-            **conditions,
+        (epsilon_t_pos_pred, epsilon_t_rot_pred, _, openness_pred) = self.noise_model(
+            trajectory=torch.cat((x_t_pos, x_t_rot), -1), timestep=timesteps, **conditions
         )
 
         self.metric.feed(
-            ground=torch.cat(
-                (epsilon_t[..., :3], epsilon_t[..., 3:9], x_0[..., 9:10]), -1
-            ),
-            prediction=torch.cat(
-                (epsilon_t_pos_pred, epsilon_t_rot_pred, openness_pred), -1
-            ),
+            ground=torch.cat((epsilon_t[..., :3], epsilon_t[..., 3:9], x_0[..., 9:10]), -1),
+            prediction=torch.cat((epsilon_t_pos_pred, epsilon_t_rot_pred, openness_pred), -1),
         )
 
         return self.metric
@@ -222,17 +227,15 @@ class ThreeDDAAgent(BaseAgent):
             torch.ones(len(sampled_trajectory)).to(sampled_trajectory.device).long()
         )
 
-        self.position_noise_scheduler.set_timesteps(self.n_diffusion_steps)
-        self.rotation_noise_scheduler.set_timesteps(self.n_diffusion_steps)
+        self.position_noise_scheduler.set_timesteps(self.n_inference_steps)
+        self.rotation_noise_scheduler.set_timesteps(self.n_inference_steps)
 
         # Iterative denoising
         timesteps = self.position_noise_scheduler.timesteps
         assert torch.allclose(self.rotation_noise_scheduler.timesteps, timesteps)
         for t in timesteps:
-            epsilon_t_pos_pred, epsilon_t_rot_pred, _, openness_pred = self.noise_model(
-                trajectory=sampled_trajectory,
-                timestep=t * ones_like_timesteps,
-                **conditions,
+            (epsilon_t_pos_pred, epsilon_t_rot_pred, _, openness_pred) = self.noise_model(
+                trajectory=sampled_trajectory, timestep=t * ones_like_timesteps, **conditions
             )
             # out = out[-1]  # keep only last layer's output # why remove batch???
             pos = self.position_noise_scheduler.step(
@@ -289,13 +292,7 @@ class ThreeDDAAgent(BaseAgent):
         )
 
     def process_input_transformations(
-        self,
-        gt_trajectory,
-        trajectory_mask,
-        rgb_obs,
-        pcd_obs,
-        instruction,
-        curr_gripper,
+        self, gt_trajectory, trajectory_mask, rgb_obs, pcd_obs, instruction, curr_gripper
     ):
         if self.relative:
             pcd_obs, curr_gripper = convert2rel(pcd_obs, curr_gripper)
@@ -345,9 +342,7 @@ class ThreeDDAAgent(BaseAgent):
 
     def encode_inputs(self, visible_rgb, visible_pcd, instruction, curr_gripper):
         # Compute visual features/positional embeddings at different scales
-        rgb_feats_pyramid, pcd_pyramid = self.encoder.encode_images(
-            visible_rgb, visible_pcd
-        )
+        rgb_feats_pyramid, pcd_pyramid = self.encoder.encode_images(visible_rgb, visible_pcd)
         # Keep only low-res scale
         context_feats = einops.rearrange(
             rgb_feats_pyramid[0], "b ncam c h w -> b (ncam h w) c"
@@ -362,9 +357,7 @@ class ThreeDDAAgent(BaseAgent):
         # Cross-attention vision to language
         if self.use_instruction:
             # Attention from vision to language
-            context_feats = self.encoder.vision_language_attention(
-                context_feats, instr_feats
-            )
+            context_feats = self.encoder.vision_language_attention(context_feats, instr_feats)
 
         # Encode gripper history (B, nhist, F)
         adaln_gripper_feats, _ = self.encoder.encode_curr_gripper(
@@ -375,13 +368,13 @@ class ThreeDDAAgent(BaseAgent):
         fps_feats, fps_pos = self.encoder.run_fps(
             context_feats.transpose(0, 1), self.encoder.relative_pe_layer(context)
         )
-        return (
-            context_feats,
-            context,  # contextualized visual features
-            instr_feats,  # language features
-            adaln_gripper_feats,  # gripper history features
-            fps_feats,
-            fps_pos,  # sampled visual features
+        return dict(
+            context_feats=context_feats,
+            context=context,  # contextualized visual features
+            instr_feats=instr_feats,  # language features
+            adaln_gripper_feats=adaln_gripper_feats,  # gripper history features
+            fps_feats=fps_feats,
+            fps_pos=fps_pos,  # sampled visual features
         )
 
     def reverse_input_transformations(self, complete_traj):

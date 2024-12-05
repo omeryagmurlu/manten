@@ -183,14 +183,12 @@ def get_gripper_camera_view_matrix(cam):
     import pybullet as pb
 
     camera_ls = pb.getLinkState(
-        bodyUniqueId=cam.robot_uid,
-        linkIndex=cam.gripper_cam_link,
-        physicsClientId=cam.cid,
+        bodyUniqueId=cam.robot_uid, linkIndex=cam.gripper_cam_link, physicsClientId=cam.cid
     )
     camera_pos, camera_orn = camera_ls[:2]
     cam_rot = pb.getMatrixFromQuaternion(camera_orn)
     cam_rot = np.array(cam_rot).reshape(3, 3)
-    cam_rot_y, cam_rot_z = cam_rot[:, 1], cam_rot[:, 2]
+    cam_rot_y, cam_rot_z = (cam_rot[:, 1], cam_rot[:, 2])
     # camera: eye position, target position, up vector
     view_matrix = pb.computeViewMatrix(camera_pos, camera_pos + cam_rot_y, -cam_rot_z)
     return view_matrix
@@ -286,7 +284,7 @@ def relative_to_absolute(
     rel_pos *= max_rel_pos * magic_scaling_factor_pos
     rel_orn *= max_rel_orn * magic_scaling_factor_orn
 
-    pos_proprio, orn_proprio = proprio[..., :3], proprio[..., 3:6]
+    pos_proprio, orn_proprio = (proprio[..., :3], proprio[..., 3:6])
 
     target_pos = pos_proprio + rel_pos
     target_orn = orn_proprio + rel_orn

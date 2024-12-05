@@ -60,9 +60,7 @@ class Resize:
 
         # Resize
         kwargs = {
-            n: transforms_f.resize(
-                arg, resized_size, transforms.InterpolationMode.NEAREST
-            )
+            n: transforms_f.resize(arg, resized_size, transforms.InterpolationMode.NEAREST)
             for n, arg in kwargs.items()
         }
 
@@ -74,9 +72,7 @@ class Resize:
             )
             kwargs = {
                 n: transforms_f.pad(
-                    arg,
-                    padding=[0, 0, right_pad, bottom_pad],
-                    padding_mode="reflect",
+                    arg, padding=[0, 0, right_pad, bottom_pad], padding_mode="reflect"
                 )
                 for n, arg in kwargs.items()
             }

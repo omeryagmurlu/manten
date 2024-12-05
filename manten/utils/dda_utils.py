@@ -40,21 +40,17 @@ def sample_ghost_points_uniform_sphere(center, radius, bounds, num_points=1000):
     return ghost_points
 
 
-"""
-Below is a continuous 6D rotation representation adapted from
-On the Continuity of Rotation Representations in Neural Networks
-https://arxiv.org/pdf/1812.07035.pdf
-https://github.com/papagina/RotationContinuity/blob/master/sanity_test/code/tools.py
-"""
+### Below is a continuous 6D rotation representation adapted from
+### On the Continuity of Rotation Representations in Neural Networks
+### https://arxiv.org/pdf/1812.07035.pdf
+### https://github.com/papagina/RotationContinuity/blob/master/sanity_test/code/tools.py
 
 
 def normalize_vector(v, return_mag=False):
     device = v.device
     batch = v.shape[0]
     v_mag = torch.sqrt(v.pow(2).sum(1))
-    v_mag = torch.max(
-        v_mag, torch.autograd.Variable(torch.FloatTensor([1e-8]).to(device))
-    )
+    v_mag = torch.max(v_mag, torch.autograd.Variable(torch.FloatTensor([1e-8]).to(device)))
     v_mag = v_mag.view(batch, 1).expand(batch, v.shape[1])
     v = v / v_mag
     if return_mag:
@@ -106,15 +102,13 @@ def orthonormalize_by_gram_schmidt(matrix):
     Returns:
         A tensor of shape (..., 3, 3) with orthogonal rows.
     """
-    a1, a2, a3 = matrix[..., :, 0], matrix[..., :, 1], matrix[..., :, 2]
+    a1, a2, a3 = (matrix[..., :, 0], matrix[..., :, 1], matrix[..., :, 2])
     b1 = F.normalize(a1, dim=-1)
 
     b2 = a2 - (b1 * a2).sum(-1, keepdim=True) * b1
     b2 = F.normalize(b2, dim=-1)
 
-    b3 = (
-        a3 - (b1 * a3).sum(-1, keepdim=True) * b1 - (b2 * a3).sum(-1, keepdim=True) * b2
-    )
+    b3 = a3 - (b1 * a3).sum(-1, keepdim=True) * b1 - (b2 * a3).sum(-1, keepdim=True) * b2
     b3 = F.normalize(b3, dim=-1)
 
     return torch.stack([b1, b2, b3], dim=-1)
@@ -213,7 +207,7 @@ def matrix_to_quaternion(matrix: torch.Tensor) -> torch.Tensor:
         raise ValueError(f"Invalid rotation matrix shape {matrix.shape}.")
 
     batch_dim = matrix.shape[:-2]
-    m00, m01, m02, m10, m11, m12, m20, m21, m22 = torch.unbind(
+    (m00, m01, m02, m10, m11, m12, m20, m21, m22) = torch.unbind(
         matrix.reshape(batch_dim + (9,)), dim=-1
     )
 
@@ -256,6 +250,6 @@ def matrix_to_quaternion(matrix: torch.Tensor) -> torch.Tensor:
     # if not for numerical problems, quat_candidates[i] should be same (up to a sign),
     # forall i; we pick the best-conditioned one (with the largest denominator)
 
-    return quat_candidates[
-        F.one_hot(q_abs.argmax(dim=-1), num_classes=4) > 0.5, :
-    ].reshape(batch_dim + (4,))
+    return quat_candidates[F.one_hot(q_abs.argmax(dim=-1), num_classes=4) > 0.5, :].reshape(
+        batch_dim + (4,)
+    )

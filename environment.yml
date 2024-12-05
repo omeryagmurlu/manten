@@ -28,3 +28,6 @@ dependencies:
       - transformers
       - git+https://github.com/openai/CLIP.git
       - blosc
+
+      # - pre-commit
+      # - ipykernel

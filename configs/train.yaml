@@ -1,10 +1,16 @@
-project:
-  output_dir: "logs"
 training:
   num_epochs: 80
-  sanity_check: True
+  sanity_check: 5
+  log_every_n_steps: 1
+  save_every_n_epochs: 2
   test_every_n_epochs: 1
+  test_ene_max_steps: 1000
+  eval_every_n_epochs: 1
+  eval_ene_max_steps: 1000
   seed: 42
+  deterministic: False
+  # resume_from_save: False
+  resume_from_save: /home/i53/student/yagmurlu/code/manten/outputs/2024-12-05/05-32-28/accelerate/checkpoint_3
 
 accelerator:
   _target_: accelerate.Accelerator
@@ -63,7 +69,7 @@ agent:
   num_history: ${_num_history}
   relative: ${_relative_action}
   use_instruction: True
-  n_diffusion_steps: ${_diffusion_timesteps}
+  n_inference_steps: ${_diffusion_timesteps}
 
 _lr: 0.0003
 _weight_decay: 0.005
@@ -95,7 +101,7 @@ _training_calvin_data: ./data/calvin/packaged_debug/training
 _validation_calvin_data: ./data/calvin/packaged_debug/validation
 _instructions: ./data/calvin/instructions/calvin_task_debug_D/
 
-_batch_size: 2
+_batch_size: 1
 _num_workers: 0
 datamodule:
   _target_: manten.utils.dummy_datamodule.DummyDataModule

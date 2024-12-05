@@ -3,16 +3,14 @@
 import torch
 from torchvision import transforms
 from typing import Type, Union, List, Any
-from torchvision.models.resnet import _resnet, BasicBlock, Bottleneck, ResNet
+from torchvision.models.resnet import BasicBlock, Bottleneck, ResNet
 
 
 def load_resnet50(pretrained: bool = False):
     backbone = _resnet(
         "resnet50", Bottleneck, [3, 4, 6, 3], pretrained=pretrained, progress=True
     )
-    normalize = transforms.Normalize(
-        mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225]
-    )
+    normalize = transforms.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225])
     return backbone, normalize
 
 
@@ -20,9 +18,7 @@ def load_resnet18(pretrained: bool = False):
     backbone = _resnet(
         "resnet18", Bottleneck, [2, 2, 2, 2], pretrained=pretrained, progress=True
     )
-    normalize = transforms.Normalize(
-        mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225]
-    )
+    normalize = transforms.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225])
     return backbone, normalize
 
 
@@ -62,10 +58,4 @@ class ResNetFeatures(ResNet):
         x3 = self.layer3(x2)
         x4 = self.layer4(x3)
 
-        return {
-            "res1": x0,
-            "res2": x1,
-            "res3": x2,
-            "res4": x3,
-            "res5": x4,
-        }
+        return {"res1": x0, "res2": x1, "res3": x2, "res4": x3, "res5": x4}

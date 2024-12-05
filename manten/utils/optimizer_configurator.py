@@ -8,11 +8,7 @@ class ParamConfig(Protocol):
 
 class OptimizerConfigurator:
     def __init__(
-        self,
-        *,
-        agent,
-        params_configs: List[ParamConfig] = [],
-        default_params_config,
+        self, *, agent, params_configs: List[ParamConfig] = [], default_params_config
     ):
         self.agent = agent
         self.params_configs = params_configs

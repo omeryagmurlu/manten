@@ -33,10 +33,7 @@ def traj_collate_fn(batch):
     ]
     ret_dict = {
         key: torch.cat(
-            [
-                item[key].float() if key != "trajectory_mask" else item[key]
-                for item in batch
-            ]
+            [item[key].float() if key != "trajectory_mask" else item[key] for item in batch]
         )
         for key in keys
     }
@@ -59,12 +56,7 @@ class CalvinDataset(Dataset):
         root,
         instructions=None,
         # dataset specification
-        taskvar=[
-            ("A", 0),
-            ("B", 0),
-            ("C", 0),
-            ("D", 0),
-        ],
+        taskvar=[("A", 0), ("B", 0), ("C", 0), ("D", 0)],
         max_episode_length=5,
         cache_size=0,
         max_episodes_per_task=100,
@@ -166,9 +158,7 @@ class CalvinDataset(Dataset):
             return None
 
         # Dynamic chunking so as not to overload GPU memory
-        chunk = random.randint(
-            0, math.ceil(len(episode[0]) / self._max_episode_length) - 1
-        )
+        chunk = random.randint(0, math.ceil(len(episode[0]) / self._max_episode_length) - 1)
 
         # Get frame ids for this chunk
         frame_ids = episode[0][
@@ -232,9 +222,7 @@ class CalvinDataset(Dataset):
                 traj_items = [self._interpolate_traj(episode[5][i]) for i in frame_ids]
             else:
                 traj_items = [
-                    self._interpolate_traj(
-                        torch.cat([episode[4][i], episode[2][i]], dim=0)
-                    )
+                    self._interpolate_traj(torch.cat([episode[4][i], episode[2][i]], dim=0))
                     for i in frame_ids
                 ]
             max_l = max(len(item) for item in traj_items)
@@ -261,9 +249,7 @@ class CalvinDataset(Dataset):
             for i in range(traj.shape[0]):
                 for j in range(traj.shape[1]):
                     rel_traj[i, j] = torch.as_tensor(
-                        to_relative_action(
-                            traj[i, j].numpy(), traj[i, 0].numpy(), clip=False
-                        )
+                        to_relative_action(traj[i, j].numpy(), traj[i, 0].numpy(), clip=False)
                     )
             traj = rel_traj
 

@@ -11,13 +11,7 @@ def load_clip():
     state_dict = clip_model.state_dict()
     layers = tuple(
         [
-            len(
-                set(
-                    k.split(".")[2]
-                    for k in state_dict
-                    if k.startswith(f"visual.layer{b}")
-                )
-            )
+            len({k.split(".")[2] for k in state_dict if k.startswith(f"visual.layer{b}")})
             for b in [1, 2, 3, 4]
         ]
     )
@@ -44,10 +38,4 @@ class ModifiedResNetFeatures(ModifiedResNet):
         x3 = self.layer3(x2)
         x4 = self.layer4(x3)
 
-        return {
-            "res1": x0,
-            "res2": x1,
-            "res3": x2,
-            "res4": x3,
-            "res5": x4,
-        }
+        return {"res1": x0, "res2": x1, "res3": x2, "res4": x3, "res5": x4}

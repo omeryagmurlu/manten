@@ -3,7 +3,6 @@ This script needed to be cleaned up
 """
 
 import warnings
-import einops
 import torch
 from torch.nn import Linear
 from torch.nn.init import xavier_uniform_
@@ -276,7 +275,7 @@ def multi_head_attention_forward(
         attn_mask: mask that prevents attention to certain positions. This is an additive mask
             (i.e. the values will be added to the attention layer).
         use_separate_proj_weight: the function accept the proj. weights for query, key,
-            and value in differnt forms. If false, in_proj_weight will be used, which is
+            and value in different forms. If false, in_proj_weight will be used, which is
             a combination of q_proj_weight, k_proj_weight, v_proj_weight.
         q_proj_weight, k_proj_weight, v_proj_weight, in_proj_bias: input projection weight and bias.
         static_k, static_v: static key and value used for attention operators.
@@ -430,14 +429,14 @@ def multi_head_attention_forward(
 
     if rotary_pe is not None:  # rotary pe ROPE disentangeld
         qp, kvp = rotary_pe
-        q_cos, q_sin = qp[..., 0], qp[..., 1]
-        k_cos, k_sin = kvp[..., 0], kvp[..., 1]
-        q = RotaryPositionEncoding.embed_rotary(
-            q.transpose(0, 1), q_cos, q_sin
-        ).transpose(0, 1)
-        k = RotaryPositionEncoding.embed_rotary(
-            k.transpose(0, 1), k_cos, k_sin
-        ).transpose(0, 1)
+        q_cos, q_sin = (qp[..., 0], qp[..., 1])
+        k_cos, k_sin = (kvp[..., 0], kvp[..., 1])
+        q = RotaryPositionEncoding.embed_rotary(q.transpose(0, 1), q_cos, q_sin).transpose(
+            0, 1
+        )
+        k = RotaryPositionEncoding.embed_rotary(k.transpose(0, 1), k_cos, k_sin).transpose(
+            0, 1
+        )
 
     q = q.contiguous().view(tgt_len, bsz * num_heads, head_dim).transpose(0, 1)
     if k is not None:
@@ -464,21 +463,11 @@ def multi_head_attention_forward(
     if add_zero_attn:
         src_len += 1
         k = torch.cat(
-            [
-                k,
-                torch.zeros(
-                    (k.size(0), 1) + k.size()[2:], dtype=k.dtype, device=k.device
-                ),
-            ],
+            [k, torch.zeros((k.size(0), 1) + k.size()[2:], dtype=k.dtype, device=k.device)],
             dim=1,
         )
         v = torch.cat(
-            [
-                v,
-                torch.zeros(
-                    (v.size(0), 1) + v.size()[2:], dtype=v.dtype, device=v.device
-                ),
-            ],
+            [v, torch.zeros((v.size(0), 1) + v.size()[2:], dtype=v.dtype, device=v.device)],
             dim=1,
         )
         if attn_mask is not None:
@@ -486,9 +475,7 @@ def multi_head_attention_forward(
                 [
                     attn_mask,
                     torch.zeros(
-                        (attn_mask.size(0), 1),
-                        dtype=attn_mask.dtype,
-                        device=attn_mask.device,
+                        (attn_mask.size(0), 1), dtype=attn_mask.dtype, device=attn_mask.device
                     ),
                 ],
                 dim=1,

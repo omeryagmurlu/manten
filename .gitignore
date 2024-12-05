@@ -172,9 +172,11 @@ cython_debug/
 
 # Lightning-Hydra-Template
 configs/local/default.yaml
-/data/
-/logs/
+data
+logs
 .env
 .ruff_cache
 outputs/
 wandb
+node_modules
+data

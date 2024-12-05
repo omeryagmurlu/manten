@@ -270,7 +270,7 @@ def multi_head_attention_forward(
         attn_mask: mask that prevents attention to certain positions. This is an additive mask
             (i.e. the values will be added to the attention layer).
         use_separate_proj_weight: the function accept the proj. weights for query, key,
-            and value in differnt forms. If false, in_proj_weight will be used, which is
+            and value in different forms. If false, in_proj_weight will be used, which is
             a combination of q_proj_weight, k_proj_weight, v_proj_weight.
         q_proj_weight, k_proj_weight, v_proj_weight, in_proj_bias: input projection weight and bias.
         static_k, static_v: static key and value used for attention operators.
@@ -426,14 +426,14 @@ def multi_head_attention_forward(
 
     if rotary_pe is not None:  # rotary pe ROPE disentangeld
         qp, kvp = rotary_pe
-        q_cos, q_sin = qp[..., 0], qp[..., 1]
-        k_cos, k_sin = kvp[..., 0], kvp[..., 1]
-        q = RotaryPositionEncoding.embed_rotary(
-            q.transpose(0, 1), q_cos, q_sin
-        ).transpose(0, 1)
-        k = RotaryPositionEncoding.embed_rotary(
-            k.transpose(0, 1), k_cos, k_sin
-        ).transpose(0, 1)
+        q_cos, q_sin = (qp[..., 0], qp[..., 1])
+        k_cos, k_sin = (kvp[..., 0], kvp[..., 1])
+        q = RotaryPositionEncoding.embed_rotary(q.transpose(0, 1), q_cos, q_sin).transpose(
+            0, 1
+        )
+        k = RotaryPositionEncoding.embed_rotary(k.transpose(0, 1), k_cos, k_sin).transpose(
+            0, 1
+        )
 
     q = q.contiguous().view(tgt_len, bsz * num_heads, head_dim).transpose(0, 1)
     if k is not None:
@@ -460,21 +460,11 @@ def multi_head_attention_forward(
     if add_zero_attn:
         src_len += 1
         k = torch.cat(
-            [
-                k,
-                torch.zeros(
-                    (k.size(0), 1) + k.size()[2:], dtype=k.dtype, device=k.device
-                ),
-            ],
+            [k, torch.zeros((k.size(0), 1) + k.size()[2:], dtype=k.dtype, device=k.device)],
             dim=1,
         )
         v = torch.cat(
-            [
-                v,
-                torch.zeros(
-                    (v.size(0), 1) + v.size()[2:], dtype=v.dtype, device=v.device
-                ),
-            ],
+            [v, torch.zeros((v.size(0), 1) + v.size()[2:], dtype=v.dtype, device=v.device)],
             dim=1,
         )
         if attn_mask is not None:
@@ -482,9 +472,7 @@ def multi_head_attention_forward(
                 [
                     attn_mask,
                     torch.zeros(
-                        (attn_mask.size(0), 1),
-                        dtype=attn_mask.dtype,
-                        device=attn_mask.device,
+                        (attn_mask.size(0), 1), dtype=attn_mask.dtype, device=attn_mask.device
                     ),
                 ],
                 dim=1,
@@ -512,12 +500,9 @@ def multi_head_attention_forward(
     if key_padding_mask is not None:
         attn_output_weights = attn_output_weights.view(bsz, num_heads, tgt_len, src_len)
         attn_output_weights = attn_output_weights.masked_fill(
-            key_padding_mask.unsqueeze(1).unsqueeze(2),
-            float("-inf"),
+            key_padding_mask.unsqueeze(1).unsqueeze(2), float("-inf")
         )
-        attn_output_weights = attn_output_weights.view(
-            bsz * num_heads, tgt_len, src_len
-        )
+        attn_output_weights = attn_output_weights.view(bsz * num_heads, tgt_len, src_len)
 
     if slot_competition:
         attn_output_weights = F.softmax(attn_output_weights, dim=-2) + 1e-8
@@ -537,21 +522,17 @@ def multi_head_attention_forward(
         k_mem = k_mem.permute((2, 0, 1))
         key_mem_len = k_mem.shape[0]
         k_mem = (
-            k_mem.contiguous()
-            .view(key_mem_len, bsz * num_heads, head_dim)
-            .transpose(0, 1)
+            k_mem.contiguous().view(key_mem_len, bsz * num_heads, head_dim).transpose(0, 1)
         )
         v_mem = v_mem.permute((2, 0, 1))
         v_mem = (
-            v_mem.contiguous()
-            .view(key_mem_len, bsz * num_heads, head_dim)
-            .transpose(0, 1)
+            v_mem.contiguous().view(key_mem_len, bsz * num_heads, head_dim).transpose(0, 1)
         )
         #         if True:
         #             k_mem = F.normalize(k_mem, dim = -1)
 
         attn_output_weights_mem = torch.bmm(q, k_mem.transpose(1, 2))  # [24, 16, 110]
-        # bcz correspondance b/w key key is good not query, key visually
+        # bcz correspondence b/w key key is good not query, key visually
         #         attn_output_weights_mem = torch.bmm(k, k_mem.transpose(1, 2))
         attn_output_weights_mem = F.softmax(attn_output_weights_mem, dim=-1)
         if mem_mask is not None:
@@ -574,16 +555,14 @@ def multi_head_attention_forward(
         # gated learnable attention like memorizing transformers
         print("gate_attn ", torch.sigmoid(gate_attn))
         gate = torch.sigmoid(gate_attn).reshape(-1, 1, 1, 1)  # (n_head, 1, 1, 1)
-        attn_output_mem = attn_output_mem.view(
-            bsz, num_heads, tgt_len, head_dim
-        ).transpose(0, 1)  # [num_heads, bsz, tgt_len, head_dim]
+        attn_output_mem = attn_output_mem.view(bsz, num_heads, tgt_len, head_dim).transpose(
+            0, 1
+        )  # [num_heads, bsz, tgt_len, head_dim]
         attn_output = attn_output.view(bsz, num_heads, tgt_len, head_dim).transpose(
             0, 1
         )  # [num_heads, bsz, tgt_len, head_dim]
         attn_output = gate * attn_output_mem + (1.0 - gate) * attn_output
-        attn_output = attn_output.transpose(1, 0).view(
-            bsz * num_heads, tgt_len, head_dim
-        )
+        attn_output = attn_output.transpose(1, 0).view(bsz * num_heads, tgt_len, head_dim)
 
     attn_output = attn_output.transpose(0, 1).contiguous().view(tgt_len, bsz, embed_dim)
     attn_output = F.linear(attn_output, out_proj_weight, out_proj_bias)
@@ -594,6 +573,6 @@ def multi_head_attention_forward(
         # average attention weights over heads
         attn_output_weights = attn_output_weights.view(bsz, num_heads, tgt_len, src_len)
         #         return attn_output, attn_output_weights.sum(dim=1) / num_heads
-        return attn_output, attn_output_weights
+        return (attn_output, attn_output_weights)
     else:
         return attn_output, None
