@@ -134,7 +134,7 @@ class ThreeDDAAgent(BaseAgent):
         )
 
     @torch.no_grad()
-    def test_step(self, batch):
+    def validate_step(self, batch):
         (gt_trajectory, gt_openness, _, _, conditions) = self.process_batch(batch)
 
         assert torch.is_grad_enabled() is False

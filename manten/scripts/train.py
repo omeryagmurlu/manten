@@ -7,21 +7,31 @@ import torch
 
 from accelerate.utils import set_seed
 from manten.agents.base_agent import AgentMode
-from manten.utils.file_utils import write_json
+from manten.utils.utils_file import write_json
 from manten.utils.progbar import progbar
-from manten.utils.log_collator import LogCollator
+from manten.utils.log_aggregator import LogAggregator
 from manten.utils.root import root
 from manten.utils.logging import get_logger
+
+
+def nop(*args, **kwargs):
+    return None
+
 
 logger = get_logger(__name__)
 
 
 def _validator_factory(compute_logs):
     def validate(
-        dataloader, agent, max_steps=float("inf"), log_col_kwargs={}, progbar_kwargs={}
+        dataloader,
+        agent,
+        max_steps=float("inf"),
+        log_col_kwargs={},
+        progbar_kwargs={},
+        at_batch_end=nop,
     ):
         agent.eval()
-        logs = LogCollator(**log_col_kwargs)
+        logs = LogAggregator(**log_col_kwargs)
         for step, batch in enumerate(
             progress := progbar(
                 dataloader,
@@ -33,7 +43,8 @@ def _validator_factory(compute_logs):
                 progress.close()
                 break
             agent.reset()
-            compute_logs(agent, batch, logs, step, progress)
+            step_result = compute_logs(agent, batch, logs, step, progress)
+            at_batch_end(agent, step, batch, logs, step_result)
         return logs
 
     return validate
@@ -47,13 +58,15 @@ def eval_factory():
         progress.set_postfix(**metric.summary_metrics())
         logs.log(metric.metrics())
 
+        return trajectory, metric
+
     return _validator_factory(compute_logs)
 
 
-def test_factory():
+def validate_factory():
     def compute_logs(agent, batch, logs, step, progress):
         with torch.inference_mode():
-            metric = agent(AgentMode.TEST, batch)
+            metric = agent(AgentMode.VALIDATE, batch)
 
         progress.set_postfix(**metric.summary_metrics())
         logs.log(metric.metrics())
@@ -62,14 +75,14 @@ def test_factory():
 
 
 def sanity_check(dataloader, agent, sanity_check_steps=5):
-    test_sanity_check = test_factory()
+    validate_sanity_check = validate_factory()
     eval_sanity_check = eval_factory()
 
-    test_sanity_check(
+    validate_sanity_check(
         dataloader,
         agent,
         max_steps=sanity_check_steps,
-        progbar_kwargs=dict(desc="sanity check (test)"),
+        progbar_kwargs=dict(desc="sanity check (validate)"),
     )
     eval_sanity_check(
         dataloader,
@@ -101,24 +114,35 @@ class TrainState:
 
 
 def train(cfg, accelerator, agent, train_dl, test_dl, optimizer, lr_scheduler):
-    test = test_factory()
+    validate = validate_factory()
     eval = eval_factory()
 
     def every_n_epochs(n):
-        return bool(n) and ((state.epoch + 1) % n == 0 or state.epoch == cfg.num_epochs - 1)
+        return bool(n) and ((state.epoch + 1) % n == 0 or (state.epoch + 1) == cfg.num_epochs)
 
     def every_n_global_steps(n):
         return bool(n) and ((state.global_step + 1) % n == 0 or (step + 1) == len_train_dl)
 
+    def vis_cb(agent, step, batch, logs, step_result):
+        if step == 0:
+            vis_cb.vis = None
+            _, metric = step_result
+            vis_cb.vis = {f"first/{k}": v for k, v in metric.visualize().items()}
+        else:
+            # explicit pass here, vis_cb.vis is logged for the whole epoch,
+            # so the saved 'first' batch's image shouldn't be overwritten
+            pass
+
     ism = accelerator.is_main_process
     len_train_dl = len(train_dl)
 
+    logs = hydra.utils.instantiate(cfg.log_aggregator)
     state = TrainState()
     accelerator.register_for_checkpointing(state)
 
     # Potentially load in the weights and states from a previous save
     if cfg.resume_from_save:
-        # maybe later automatic loading of best checkpoint
+        # TODO: maybe later automatic loading of last/best checkpoint
         checkpoint_to_load = cfg.resume_from_save
 
         accelerator.load_state(checkpoint_to_load)
@@ -126,7 +150,6 @@ def train(cfg, accelerator, agent, train_dl, test_dl, optimizer, lr_scheduler):
         state.epoch += 1  # to start from the next epoch instead of redoing the current one
 
     logger.info("starting training")
-    logs = LogCollator(reductions=["mean"])
     for state.epoch in range(state.epoch, cfg.num_epochs):
         agent.train()
         for step, batch in enumerate(
@@ -164,29 +187,43 @@ def train(cfg, accelerator, agent, train_dl, test_dl, optimizer, lr_scheduler):
 
             state.global_step += 1
 
-        if ism and every_n_epochs(cfg.test_every_n_epochs):
-            test_logs = test(
+        if ism and every_n_epochs(cfg.validate_every_n_epochs):
+            validate_logs = validate(
                 test_dl,
                 agent,
-                max_steps=cfg.test_ene_max_steps,
-                progbar_kwargs=dict(desc=f"epoch {state.epoch} (test)", leave=False),
+                max_steps=cfg.validate_ene_max_steps,
+                progbar_kwargs=dict(desc=f"epoch {state.epoch} (validate)", leave=False),
                 log_col_kwargs=dict(reductions=logs.reductions),
             )
-            logger.info(f"test@epoch:{state.epoch}")
-            accelerator.log(test_logs := test_logs.collate("test/"), step=state.global_step)
-            print(tabulate(test_logs.items()))
+            logger.info(f"validate@epoch:{state.epoch}")
+            accelerator.log(
+                validate_logs := validate_logs.collate("validate/"), step=state.global_step
+            )
+            print(tabulate(validate_logs.items()))
 
-        if ism and every_n_epochs(cfg.eval_every_n_epochs):
-            eval_logs = eval(
-                test_dl,
-                agent,
-                max_steps=cfg.eval_ene_max_steps,
-                progbar_kwargs=dict(desc=f"epoch {state.epoch} (eval)", leave=False),
-                log_col_kwargs=dict(reductions=logs.reductions),
-            )
-            logger.info(f"evaluation@epoch:{state.epoch}")
-            accelerator.log(eval_logs := eval_logs.collate("eval/"), step=state.global_step)
-            print(tabulate(eval_logs.items()))
+        for every_n, dl, max_steps, split in [
+            (cfg.eval_train_every_n_epochs, train_dl, cfg.eval_train_ene_max_steps, "train"),
+            (cfg.eval_test_every_n_epochs, test_dl, cfg.eval_test_ene_max_steps, "test"),
+        ]:
+            if ism and every_n_epochs(every_n):
+                eval_logs = eval(
+                    dl,
+                    agent,
+                    max_steps=max_steps,
+                    progbar_kwargs=dict(
+                        desc=f"epoch {state.epoch} (eval:{split})", leave=False
+                    ),
+                    log_col_kwargs=dict(reductions=logs.reductions),
+                    at_batch_end=vis_cb,
+                )
+                logger.info(f"evaluation:{split}@epoch:{state.epoch}")
+                if vis_cb.vis is not None:
+                    vis_cb.vis = eval_logs._rename_logs(vis_cb.vis, f"eval-{split}/")
+                accelerator.log(
+                    (eval_logs := eval_logs.collate(f"eval-{split}/")) | (vis_cb.vis or {}),
+                    step=state.global_step,
+                )
+                print(tabulate(eval_logs.items()))
 
         if ism and every_n_epochs(cfg.save_every_n_epochs):
             accelerator.wait_for_everyone()
@@ -274,7 +311,7 @@ def main(cfg):
 
 if __name__ == "__main__":
     if True:
-        from manten.utils.debug_utils import monkeypatch_tensor_shape
+        from manten.utils.utils_debug import monkeypatch_tensor_shape
 
         monkeypatch_tensor_shape()
     main()

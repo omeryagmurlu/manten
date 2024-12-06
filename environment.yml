@@ -22,7 +22,9 @@ dependencies:
       - wandb
       - tqdm
       - rootutils
+
       - einops
+      - optree
 
       - diffusers[training]
       - transformers
@@ -31,3 +33,6 @@ dependencies:
 
       # - pre-commit
       # - ipykernel
+
+      - matplotlib
+      - plotly

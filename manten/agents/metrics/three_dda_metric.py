@@ -1,5 +1,6 @@
-from manten.agents.metrics.base_metric import BaseMetric
 import torch.nn.functional as F
+from manten.agents.metrics.base_metric import BaseMetric
+from manten.utils.utils_pytree import with_tree_map
 
 
 class ThreeDDAMetric(BaseMetric):
@@ -13,6 +14,7 @@ class ThreeDDAMetric(BaseMetric):
     def loss(self):
         return self.pos_loss() + self.ortho6d_loss() + self.open_loss()
 
+    @with_tree_map(lambda x: x.detach().cpu().numpy())
     def metrics(self):
         # # pred/gt are (B, L, 7) (3 ee + 4 joint)
         # pred = self.prediction
@@ -41,27 +43,26 @@ class ThreeDDAMetric(BaseMetric):
         gt = self.ground
 
         ret = dict(
-            loss_total=self.loss().item(),
-            loss_pos=self.pos_loss().item(),
-            loss_ortho6d=self.ortho6d_loss().item(),
-            loss_open=self.open_loss().item(),
-            mae_x=F.l1_loss(pred[..., 0], gt[..., 0]).item(),
-            mae_y=F.l1_loss(pred[..., 1], gt[..., 1]).item(),
-            mae_z=F.l1_loss(pred[..., 2], gt[..., 2]).item(),
-            mae_pos=F.l1_loss(pred[..., :3], gt[..., :3]).item(),
-            mae_ortho6d=F.l1_loss(pred[..., 3:9], gt[..., 3:9]).item(),
-            bce_open=F.binary_cross_entropy_with_logits(
-                pred[..., 9:10], gt[..., 9:10]
-            ).item(),
+            loss_total=self.loss(),
+            loss_pos=self.pos_loss(),
+            loss_ortho6d=self.ortho6d_loss(),
+            loss_open=self.open_loss(),
+            mae_x=F.l1_loss(pred[..., 0], gt[..., 0]),
+            mae_y=F.l1_loss(pred[..., 1], gt[..., 1]),
+            mae_z=F.l1_loss(pred[..., 2], gt[..., 2]),
+            mae_pos=F.l1_loss(pred[..., :3], gt[..., :3]),
+            mae_ortho6d=F.l1_loss(pred[..., 3:9], gt[..., 3:9]),
+            bce_open=F.binary_cross_entropy_with_logits(pred[..., 9:10], gt[..., 9:10]),
         )
 
         return ret
 
+    @with_tree_map(lambda x: x.detach().cpu().numpy())
     def summary_metrics(self):
         return dict(
-            loss_pos=self.pos_loss().item(),
-            loss_ortho6d=self.ortho6d_loss().item(),
-            loss_open=self.open_loss().item(),
+            loss_pos=self.pos_loss(),
+            loss_ortho6d=self.ortho6d_loss(),
+            loss_open=self.open_loss(),
         )
 
     def pos_loss(self):

@@ -36,21 +36,6 @@ MANIFEST
 pip-log.txt
 pip-delete-this-directory.txt
 
-# Unit test / coverage reports
-htmlcov/
-.tox/
-.nox/
-.coverage
-.coverage.*
-.cache
-nosetests.xml
-coverage.xml
-*.cover
-*.py,cover
-.hypothesis/
-.pytest_cache/
-cover/
-
 # Translations
 *.mo
 *.pot
@@ -173,10 +158,7 @@ cython_debug/
 # Lightning-Hydra-Template
 configs/local/default.yaml
 data
-logs
 .env
 .ruff_cache
 outputs/
-wandb
 node_modules
-data

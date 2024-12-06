@@ -8,7 +8,7 @@ from manten.agents.metrics.base_metric import BaseMetric
 
 class AgentMode(Enum):
     TRAIN = "train"
-    TEST = "test"
+    VALIDATE = "validate"
     EVAL = "eval"
 
 
@@ -32,8 +32,8 @@ class BaseAgent(nn.Module, ABC):
         match agent_mode:
             case AgentMode.TRAIN:
                 return self.train_step(*args, **kwargs)
-            case AgentMode.TEST:
-                return self.test_step(*args, **kwargs)
+            case AgentMode.VALIDATE:
+                return self.validate_step(*args, **kwargs)
             case AgentMode.EVAL:
                 return self.eval_step(*args, **kwargs)
             case _:
@@ -43,12 +43,8 @@ class BaseAgent(nn.Module, ABC):
     def train_step(self, batch: dict) -> BaseMetric:
         raise NotImplementedError
 
-    # @abstractmethod
-    # def validate_step(self, batch: dict) -> BaseMetric:
-    #     raise NotImplementedError
-
     @abstractmethod
-    def test_step(self, batch: dict) -> BaseMetric:
+    def validate_step(self, batch: dict) -> BaseMetric:
         raise NotImplementedError
 
     @abstractmethod

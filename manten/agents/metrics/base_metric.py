@@ -26,6 +26,10 @@ class BaseMetric(ABC):
         """Return a summary of metrics. Useful for use in tqdm post_fix"""
         return self.metrics()
 
+    def visualize(self):
+        """Return a visualization of the metric. Useful for tensorboard"""
+        return None
+
 
 class BaseStats(BaseMetric, ABC):
     def __init__(self):

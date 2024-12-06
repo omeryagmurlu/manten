@@ -4,7 +4,7 @@ def test(cfg):
 
 if __name__ == "__main__":
     if True:
-        from manten.utils.debug_utils import monkeypatch_tensor_shape
+        from manten.utils.utils_debug import monkeypatch_tensor_shape
 
         monkeypatch_tensor_shape()
     # main()
