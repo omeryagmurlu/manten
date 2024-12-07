@@ -1,5 +1,5 @@
-from tqdm import tqdm
 from accelerate.state import PartialState
+from tqdm import tqdm
 
 state = PartialState()
 

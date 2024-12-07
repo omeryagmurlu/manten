@@ -28,7 +28,7 @@ class BaseMetric(ABC):
 
     def visualize(self):
         """Return a visualization of the metric. Useful for tensorboard"""
-        return None
+        return
 
 
 class BaseStats(BaseMetric, ABC):

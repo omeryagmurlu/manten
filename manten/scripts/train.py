@@ -1,21 +1,22 @@
-from dataclasses import dataclass, field
-import hydra
 import os
+from dataclasses import dataclass, field
+
+import hydra
+import torch
+from accelerate.utils import set_seed
 from omegaconf import OmegaConf
 from tabulate import tabulate
-import torch
 
-from accelerate.utils import set_seed
 from manten.agents.base_agent import AgentMode
-from manten.utils.utils_file import write_json
-from manten.utils.progbar import progbar
 from manten.utils.log_aggregator import LogAggregator
-from manten.utils.root import root
 from manten.utils.logging import get_logger
+from manten.utils.progbar import progbar
+from manten.utils.root import root
+from manten.utils.utils_file import mkdir, write_json
 
 
-def nop(*args, **kwargs):
-    return None
+def nop(*_, **__):
+    return
 
 
 logger = get_logger(__name__)
@@ -26,10 +27,15 @@ def _validator_factory(compute_logs):
         dataloader,
         agent,
         max_steps=float("inf"),
-        log_col_kwargs={},
-        progbar_kwargs={},
+        log_col_kwargs=None,
+        progbar_kwargs=None,
         at_batch_end=nop,
     ):
+        if progbar_kwargs is None:
+            progbar_kwargs = {}
+        if log_col_kwargs is None:
+            log_col_kwargs = {}
+
         agent.eval()
         logs = LogAggregator(**log_col_kwargs)
         for step, batch in enumerate(
@@ -51,7 +57,7 @@ def _validator_factory(compute_logs):
 
 
 def eval_factory():
-    def compute_logs(agent, batch, logs, step, progress):
+    def compute_logs(agent, batch, logs, _step, progress):
         with torch.inference_mode():
             trajectory, metric = agent(AgentMode.EVAL, batch, compare_gt=True)
 
@@ -64,7 +70,7 @@ def eval_factory():
 
 
 def validate_factory():
-    def compute_logs(agent, batch, logs, step, progress):
+    def compute_logs(agent, batch, logs, _step, progress):
         with torch.inference_mode():
             metric = agent(AgentMode.VALIDATE, batch)
 
@@ -82,13 +88,13 @@ def sanity_check(dataloader, agent, sanity_check_steps=5):
         dataloader,
         agent,
         max_steps=sanity_check_steps,
-        progbar_kwargs=dict(desc="sanity check (validate)"),
+        progbar_kwargs={"desc": "sanity check (validate)"},
     )
     eval_sanity_check(
         dataloader,
         agent,
         max_steps=sanity_check_steps,
-        progbar_kwargs=dict(desc="sanity check (eval)"),
+        progbar_kwargs={"desc": "sanity check (eval)"},
     )
 
     logger.info("Sanity check successful")
@@ -113,9 +119,10 @@ class TrainState:
         self.best_loss = state_dict["best_loss"]
 
 
-def train(cfg, accelerator, agent, train_dl, test_dl, optimizer, lr_scheduler):
+# TODO: This is apparently a very long and complex function, but it'll have to do for now
+def train(cfg, accelerator, agent, train_dl, test_dl, optimizer, lr_scheduler):  # noqa: C901, PLR0915
     validate = validate_factory()
-    eval = eval_factory()
+    eeval = eval_factory()
 
     def every_n_epochs(n):
         return bool(n) and ((state.epoch + 1) % n == 0 or (state.epoch + 1) == cfg.num_epochs)
@@ -123,7 +130,7 @@ def train(cfg, accelerator, agent, train_dl, test_dl, optimizer, lr_scheduler):
     def every_n_global_steps(n):
         return bool(n) and ((state.global_step + 1) % n == 0 or (step + 1) == len_train_dl)
 
-    def vis_cb(agent, step, batch, logs, step_result):
+    def vis_cb(_agent, step, _batch, _logs, step_result):
         if step == 0:
             vis_cb.vis = None
             _, metric = step_result
@@ -146,11 +153,14 @@ def train(cfg, accelerator, agent, train_dl, test_dl, optimizer, lr_scheduler):
         checkpoint_to_load = cfg.resume_from_save
 
         accelerator.load_state(checkpoint_to_load)
-        logger.info(f"resuming from checkpoint@epoch:{state.epoch} via {checkpoint_to_load}")
+        logger.info(
+            "resuming from checkpoint@epoch:%d via %s", state.epoch, checkpoint_to_load
+        )
         state.epoch += 1  # to start from the next epoch instead of redoing the current one
 
     logger.info("starting training")
-    for state.epoch in range(state.epoch, cfg.num_epochs):
+    start_epoch = state.epoch
+    for state.epoch in range(start_epoch, cfg.num_epochs):
         agent.train()
         for step, batch in enumerate(
             progress := progbar(train_dl, desc=f"epoch {state.epoch}")
@@ -172,6 +182,7 @@ def train(cfg, accelerator, agent, train_dl, test_dl, optimizer, lr_scheduler):
             overview_logs = {
                 "loss": loss.detach().item(),
                 "lr": lr_scheduler.get_last_lr()[0],
+                "step": step,
                 "global_step": state.global_step,
             }
             progress.set_postfix(**overview_logs)
@@ -192,10 +203,10 @@ def train(cfg, accelerator, agent, train_dl, test_dl, optimizer, lr_scheduler):
                 test_dl,
                 agent,
                 max_steps=cfg.validate_ene_max_steps,
-                progbar_kwargs=dict(desc=f"epoch {state.epoch} (validate)", leave=False),
-                log_col_kwargs=dict(reductions=logs.reductions),
+                progbar_kwargs={"desc": f"epoch {state.epoch} (validate)", "leave": False},
+                log_col_kwargs={"reductions": logs.reductions},
             )
-            logger.info(f"validate@epoch:{state.epoch}")
+            logger.info("validate@epoch:%d", state.epoch)
             accelerator.log(
                 validate_logs := validate_logs.collate("validate/"), step=state.global_step
             )
@@ -206,19 +217,21 @@ def train(cfg, accelerator, agent, train_dl, test_dl, optimizer, lr_scheduler):
             (cfg.eval_test_every_n_epochs, test_dl, cfg.eval_test_ene_max_steps, "test"),
         ]:
             if ism and every_n_epochs(every_n):
-                eval_logs = eval(
+                eval_logs = eeval(
                     dl,
                     agent,
                     max_steps=max_steps,
-                    progbar_kwargs=dict(
-                        desc=f"epoch {state.epoch} (eval:{split})", leave=False
-                    ),
-                    log_col_kwargs=dict(reductions=logs.reductions),
+                    progbar_kwargs={
+                        "desc": f"epoch {state.epoch} (eval:{split})",
+                        "leave": False,
+                    },
+                    log_col_kwargs={"reductions": logs.reductions},
                     at_batch_end=vis_cb,
                 )
-                logger.info(f"evaluation:{split}@epoch:{state.epoch}")
+                logger.info("evaluation:%s@epoch:%d", split, state.epoch)
                 if vis_cb.vis is not None:
-                    vis_cb.vis = eval_logs._rename_logs(vis_cb.vis, f"eval-{split}/")
+                    # _rename_logs is simpler, and I want to reuse it
+                    vis_cb.vis = eval_logs._rename_logs(vis_cb.vis, f"eval-{split}/")  # noqa: SLF001
                 accelerator.log(
                     (eval_logs := eval_logs.collate(f"eval-{split}/")) | (vis_cb.vis or {}),
                     step=state.global_step,
@@ -229,7 +242,7 @@ def train(cfg, accelerator, agent, train_dl, test_dl, optimizer, lr_scheduler):
             accelerator.wait_for_everyone()
             checkpoint_path = f"{accelerator.project_dir}/checkpoint_{state.epoch}"
             accelerator.save_state(checkpoint_path)
-            logger.info(f"checkpoint@epoch:{state.epoch} saved to {checkpoint_path}")
+            logger.info("checkpoint@epoch:%d saved to %s", state.epoch, checkpoint_path)
 
             if overview_logs["loss"] < state.best_loss:
                 state.best_loss = overview_logs["loss"]
@@ -240,7 +253,10 @@ def train(cfg, accelerator, agent, train_dl, test_dl, optimizer, lr_scheduler):
                     overview_logs,
                 )
                 logger.info(
-                    f"best checkpoint@epoch:{state.epoch} with loss {state.best_loss:.4f} saved to {best_checkpoint_path}"
+                    "best checkpoint@epoch:%d with loss %.4f saved to %s",
+                    state.epoch,
+                    state.best_loss,
+                    best_checkpoint_path,
                 )
 
 
@@ -259,11 +275,10 @@ def main(cfg):
         cfg.accelerator, project_dir=output_dir + "/accelerate"
     )
 
-    if accelerator.is_main_process:
-        if output_dir is not None:
-            os.makedirs(output_dir, exist_ok=True)
-            os.makedirs(output_dir + "/accelerate", exist_ok=True)
-            os.makedirs(output_dir + "/tracker", exist_ok=True)
+    if accelerator.is_main_process and output_dir is not None:
+        mkdir(output_dir)
+        mkdir(output_dir + "/accelerate")
+        mkdir(output_dir + "/tracker")
 
     # accelerator already handles is_main_process for trackers
     init_dict = {**OmegaConf.to_container(cfg.accelerator_init_trackers)}
@@ -272,7 +287,7 @@ def main(cfg):
     accelerator.init_trackers(**init_dict)
 
     # same for logging
-    logger.info(f"CUDA_VISIBLE_DEVICES: {os.environ.get('CUDA_VISIBLE_DEVICES', None)}")
+    logger.info("CUDA_VISIBLE_DEVICES: %d", os.environ.get("CUDA_VISIBLE_DEVICES", None))
 
     agent = hydra.utils.instantiate(cfg.agent)
 

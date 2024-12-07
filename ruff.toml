@@ -1,1 +1,70 @@
 line-length = 94
+target-version = "py310"
+
+[lint]
+select = ["ALL"]
+ignore = [
+    # these are covered by the formatter, so they are just noise:
+    "W191",   # tab-indentation
+    "E111",   # indentation-with-invalid-multiple
+    "E114",   # indentation-with-invalid-multiple-comment
+    "E117",   # over-indented
+    "D206",   # indent-with-spaces
+    "D300",   # triple-single-quotes
+    "Q000",   # bad-quotes-inline-string
+    "Q001",   # bad-quotes-multiline-string
+    "Q002",   # bad-quotes-docstring
+    "Q003",   # avoidable-escaped-quote
+    "COM812", # missing-trailing-comma
+    "COM819", # prohibited-trailing-comma
+    "ISC001", # single-line-implicit-string-concatenation
+    "ISC002", # multi-line-implicit-string-concatenation
+    "E501",   # line too long, formatter best attempts to fix this
+    "W293",   # whitespace empty line
+
+
+    # missing type annotations
+    "ANN001",
+    "ANN002",
+    "ANN003",
+    "ANN201",
+    "ANN202",
+    "ANN204",
+    "ANN205",
+
+    # # missing documentation
+    # "D100",
+    # "D101",
+    # "D102",
+    # "D103",
+    # "D107",
+    # "D205",
+    # "D212",
+    "D1",
+    "D2",
+    "D3",
+    "D4",
+
+    # TODO, FIXME:
+    "FIX002",
+    "TD002",
+    "TD003",
+
+    "FBT002", # this is nice, enable later
+    "S101",   # disallows asserts, enable later
+    "ERA001", # enable later, deletes commented out code
+    "T201",   # enable later, disallows print statements
+
+    "RET504",  # unnecessary assign, and imho the make it more readable more often than not
+    "TRY003",  # anal about exceptions, don't like it
+    "EM101",   # anal exceptions
+    "EM102",   # anal exceptions
+    "N806",    # non lowercase variable in fn, but sizes are mostly written in upper
+    "N812",    # lowercase imported as non lowercase, trips `import torch.nn.functional as F` which is common
+    "SIM108",  # force ternary assignment when possible, but I sometimes prefer the explicit if else
+    "RET505",  # unnecessary else return, they say it hampers readability, but I disagree
+    "PLR0913", # too many arguments, but haeh, that's life
+    "INP001",  # i hate __init__.py, long live pep420
+    "UP038",   # forces a subpar is instance or
+    "S311",    # thinks I'm using rnadom for crypto, but I'm not
+]

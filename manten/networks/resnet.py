@@ -1,8 +1,11 @@
 # Adapted from https://github.com/pytorch/vision/blob/v0.11.0/torchvision/models/resnet.py
 
+# ruff: noqa: FBT001, UP007
+
+from typing import Union
+
 import torch
 from torchvision import transforms
-from typing import Type, Union, List, Any
 from torchvision.models.resnet import BasicBlock, Bottleneck, ResNet
 
 
@@ -24,11 +27,11 @@ def load_resnet18(pretrained: bool = False):
 
 def _resnet(
     arch: str,
-    block: Type[Union[BasicBlock, Bottleneck]],
-    layers: List[int],
+    block: type[Union[BasicBlock, Bottleneck]],
+    layers: list[int],
     pretrained: bool,
     progress: bool,
-    **kwargs: Any,
+    **kwargs,
 ) -> ResNet:
     model = ResNetFeatures(block, layers, **kwargs)
     if pretrained:

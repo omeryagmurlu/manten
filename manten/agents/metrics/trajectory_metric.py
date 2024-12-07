@@ -1,22 +1,22 @@
-from manten.agents.metrics.base_metric import BaseMetric, BaseStats
 import torch.nn.functional as F
 
+from manten.agents.metrics.base_metric import BaseMetric, BaseStats
 from manten.utils.utils_pytree import with_tree_map
 
 
 class TrajectoryStats(BaseStats):
     def metrics(self):
         pos, quat, openn = self.stats
-        ret = dict(
-            mean_x=pos[..., 0].mean(),
-            mean_y=pos[..., 1].mean(),
-            mean_z=pos[..., 2].mean(),
-            mean_quat1=quat[..., 0].mean(),
-            mean_quat2=quat[..., 1].mean(),
-            mean_quat3=quat[..., 2].mean(),
-            mean_quat4=quat[..., 3].mean(),
-            mean_open=openn.mean(),
-        )
+        ret = {
+            "mean_x": pos[..., 0].mean(),
+            "mean_y": pos[..., 1].mean(),
+            "mean_z": pos[..., 2].mean(),
+            "mean_quat1": quat[..., 0].mean(),
+            "mean_quat2": quat[..., 1].mean(),
+            "mean_quat3": quat[..., 2].mean(),
+            "mean_quat4": quat[..., 3].mean(),
+            "mean_open": openn.mean(),
+        }
         return ret
 
     def summary_metrics(self):
@@ -45,14 +45,16 @@ class TrajectoryMetric(BaseMetric):
         pred_pos, pred_quat, pred_open = self.prediction
         gt_pos, gt_quat, gt_open = self.ground
 
-        ret = dict(
-            mae_x=F.l1_loss(pred_pos[..., 0], gt_pos[..., 0]),
-            mae_y=F.l1_loss(pred_pos[..., 1], gt_pos[..., 1]),
-            mae_z=F.l1_loss(pred_pos[..., 2], gt_pos[..., 2]),
-            mae_pos=F.l1_loss(pred_pos[..., :3], gt_pos[..., :3]),
-            mae_quat=F.l1_loss(pred_quat[..., :4], gt_quat[..., :4]),
-            bce_open=F.binary_cross_entropy_with_logits(pred_open[..., :], gt_open[..., :]),
-        )
+        ret = {
+            "mae_x": F.l1_loss(pred_pos[..., 0], gt_pos[..., 0]),
+            "mae_y": F.l1_loss(pred_pos[..., 1], gt_pos[..., 1]),
+            "mae_z": F.l1_loss(pred_pos[..., 2], gt_pos[..., 2]),
+            "mae_pos": F.l1_loss(pred_pos[..., :3], gt_pos[..., :3]),
+            "mae_quat": F.l1_loss(pred_quat[..., :4], gt_quat[..., :4]),
+            "bce_open": F.binary_cross_entropy_with_logits(
+                pred_open[..., :], gt_open[..., :]
+            ),
+        }
 
         ret.update({f"pred_{key}": value for key, value in self.pred_stats.metrics().items()})
 
@@ -75,4 +77,4 @@ class TrajectoryMetric(BaseMetric):
 
         vis_pos_fiinb = visualize_2_pos_traj(pred_pos, gt_pos)
 
-        return dict(vis_pos_fiinb=vis_pos_fiinb)
+        return {"vis_pos_fiinb": vis_pos_fiinb}

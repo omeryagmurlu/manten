@@ -1,7 +1,9 @@
-import numpy as np
 import einops
+import numpy as np
 import torch
 import torch.nn.functional as F
+
+# ruff: noqa: PLR2004, RUF005
 
 
 def normalise_quat(x: torch.Tensor):
@@ -22,9 +24,10 @@ def sample_ghost_points_grid(bounds, num_points_per_dim=10):
 
 
 def sample_ghost_points_uniform_cube(bounds, num_points=1000):
-    x = np.random.uniform(bounds[0][0], bounds[1][0], num_points)
-    y = np.random.uniform(bounds[0][1], bounds[1][1], num_points)
-    z = np.random.uniform(bounds[0][2], bounds[1][2], num_points)
+    # no-qa np legacy random
+    x = np.random.uniform(bounds[0][0], bounds[1][0], num_points)  # noqa: NPY002
+    y = np.random.uniform(bounds[0][1], bounds[1][1], num_points)  # noqa: NPY002
+    z = np.random.uniform(bounds[0][2], bounds[1][2], num_points)  # noqa: NPY002
     ghost_points = np.stack([x, y, z], axis=1)
     return ghost_points
 

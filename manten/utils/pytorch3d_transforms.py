@@ -32,6 +32,8 @@ e.g.
     transformed_points = points * R.transpose(1, 0)
 """
 
+# ruff: noqa: FBT001, UP007, PLR2004, RUF005, B905, FBT003
+
 from typing import Optional, Union
 
 import torch
@@ -401,7 +403,7 @@ def quaternion_raw_multiply(a: torch.Tensor, b: torch.Tensor) -> torch.Tensor:
 def quaternion_multiply(a: torch.Tensor, b: torch.Tensor) -> torch.Tensor:
     """
     Multiply two quaternions representing rotations, returning the quaternion
-    representing their composition, i.e. the versor with nonnegative real part.
+    representing their composition, i.e. the versor with nonnegative real part.
     Usual torch rules for broadcasting apply.
 
     Args:

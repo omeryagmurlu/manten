@@ -1,6 +1,8 @@
+# ruff: noqa: PLR0913
+
 import einops
 import torch
-import torch.nn as nn
+from torch import nn
 
 from manten.networks.position_encodings import RotaryPositionEncoding3D, SinusoidalPosEmb
 from manten.networks.three_dda.layers import (

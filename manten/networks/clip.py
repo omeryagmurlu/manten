@@ -1,8 +1,7 @@
 # Adapted from https://github.com/openai/CLIP/blob/main/clip/model.py
 
-import torch
-
 import clip
+import torch
 from clip.model import ModifiedResNet
 
 

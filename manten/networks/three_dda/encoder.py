@@ -1,3 +1,5 @@
+# ruff: noqa: PLR0913
+
 import dgl.geometry as dgl_geo
 import einops
 import torch

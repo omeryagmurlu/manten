@@ -1,7 +1,7 @@
 import math
 
 import torch
-import torch.nn as nn
+from torch import nn
 
 
 class SinusoidalPosEmb(nn.Module):
@@ -43,9 +43,8 @@ class RotaryPositionEncoding(nn.Module):
         sinx = torch.sin(x_position * div_term)  # [B, N, d]
         cosx = torch.cos(x_position * div_term)
 
-        sin_pos, cos_pos = map(
-            lambda feat: torch.stack([feat, feat], dim=-1).view(bsize, npoint, -1),
-            [sinx, cosx],
+        sin_pos, cos_pos = (
+            torch.stack([feat, feat], dim=-1).view(bsize, npoint, -1) for feat in [sinx, cosx]
         )
         position_code = torch.stack([cos_pos, sin_pos], dim=-1)
 
@@ -60,15 +59,15 @@ class RotaryPositionEncoding3D(RotaryPositionEncoding):
         super().__init__(feature_dim, pe_type)
 
     @torch.no_grad()
-    def forward(self, XYZ):
+    def forward(self, xyz):
         """
-        @param XYZ: [B,N,3]
+        @param xyz: [B,N,3]
         @return:
         """
-        bsize, npoint, _ = XYZ.shape
-        (x_position, y_position, z_position) = (XYZ[..., 0:1], XYZ[..., 1:2], XYZ[..., 2:3])
+        bsize, npoint, _ = xyz.shape
+        (x_position, y_position, z_position) = (xyz[..., 0:1], xyz[..., 1:2], xyz[..., 2:3])
         div_term = torch.exp(
-            torch.arange(0, self.feature_dim // 3, 2, dtype=torch.float, device=XYZ.device)
+            torch.arange(0, self.feature_dim // 3, 2, dtype=torch.float, device=xyz.device)
             * (-math.log(10000.0) / (self.feature_dim // 3))
         )
         div_term = div_term.view(1, 1, -1)  # [1, 1, d//6]
@@ -80,9 +79,9 @@ class RotaryPositionEncoding3D(RotaryPositionEncoding):
         sinz = torch.sin(z_position * div_term)
         cosz = torch.cos(z_position * div_term)
 
-        (sinx, cosx, siny, cosy, sinz, cosz) = map(
-            lambda feat: torch.stack([feat, feat], -1).view(bsize, npoint, -1),
-            [sinx, cosx, siny, cosy, sinz, cosz],
+        (sinx, cosx, siny, cosy, sinz, cosz) = (
+            torch.stack([feat, feat], -1).view(bsize, npoint, -1)
+            for feat in [sinx, cosx, siny, cosy, sinz, cosz]
         )
 
         position_code = torch.stack(

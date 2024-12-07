@@ -1,15 +1,17 @@
-from typing import List, Protocol
+from typing import Protocol
 
 
 class ParamConfig(Protocol):
-    contains_substrings: List[str]
+    contains_substrings: list[str]
     # and rest of optimizer configuration, lr etc.
 
 
 class OptimizerConfigurator:
     def __init__(
-        self, *, agent, params_configs: List[ParamConfig] = [], default_params_config
+        self, *, agent, params_configs: list[ParamConfig] | None = None, default_params_config
     ):
+        if params_configs is None:
+            params_configs = []
         self.agent = agent
         self.params_configs = params_configs
         self.default_params_config = default_params_config
@@ -27,4 +29,4 @@ class OptimizerConfigurator:
                     self.default_params_config["params"] = []
                 self.default_params_config["params"].append(param)
 
-        return [self.default_params_config] + self.params_configs
+        return [self.default_params_config, *self.params_configs]

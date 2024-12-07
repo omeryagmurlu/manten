@@ -1,4 +1,4 @@
-def test(cfg):
+def test(_cfg):
     pass
 
 
@@ -8,4 +8,4 @@ if __name__ == "__main__":
 
         monkeypatch_tensor_shape()
     # main()
-    raise Exception("main() not implemented for test.py yet")
+    raise NotImplementedError

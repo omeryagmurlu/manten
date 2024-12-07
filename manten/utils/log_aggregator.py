@@ -1,4 +1,5 @@
 from enum import Enum
+
 import einops
 
 from manten.utils.utils_enum import with_name_resolution
@@ -15,9 +16,9 @@ class Reduction(Enum):
 
 
 class LogAggregator:
-    def __init__(
-        self, reductions: list[Reduction] = [Reduction.MEAN, Reduction.MAX, Reduction.MIN]
-    ):
+    def __init__(self, reductions: list[Reduction] | None = None):
+        if reductions is None:
+            reductions = [Reduction.MEAN, Reduction.MAX, Reduction.MIN]
         self.list_of_logs = []
         self.reductions = [Reduction.resolve(r) for r in reductions]
         self.prefix = ""

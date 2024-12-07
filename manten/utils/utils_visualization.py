@@ -11,7 +11,7 @@ def visualize_2_pos_traj(pred_pos, gt_pos):
             z=pred_pos[:, 2],
             mode="markers+lines",
             name="Predicted",
-            marker=dict(size=4, color="blue"),
+            marker={"size": 4, "color": "blue"},
         )
     )
 
@@ -23,11 +23,11 @@ def visualize_2_pos_traj(pred_pos, gt_pos):
             z=gt_pos[:, 2],
             mode="markers+lines",
             name="Ground Truth",
-            marker=dict(size=4, color="red"),
+            marker={"size": 4, "color": "red"},
         )
     )
 
     # Set plot title and labels
-    fig.update_layout(scene=dict(xaxis_title="X", yaxis_title="Y", zaxis_title="Z"))
+    fig.update_layout(scene={"xaxis_title": "X", "yaxis_title": "Y", "zaxis_title": "Z"})
 
     return fig

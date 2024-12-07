@@ -1,22 +1,26 @@
-from collections import defaultdict, Counter
+# ruff: noqa: C901, PLR0912, G004, PLR0915, PLR2004, S301
+
 import itertools
 import math
 import pickle
 import random
+from collections import Counter, defaultdict
 from pathlib import Path
-import torch
-from torch.utils.data import Dataset
 from time import time
 
+import torch
+from torch.utils.data import Dataset
+
 from manten.data.utils import Resize, TrajectoryInterpolator, loader
-from manten.utils.utils_with_calvin import to_relative_action, convert_rotation
 from manten.utils.logging import get_logger
+from manten.utils.utils_with_calvin import convert_rotation, to_relative_action
 
 logger = get_logger(__name__)
 
 
 def load_instructions(instructions, split):
-    instructions = pickle.load(open(f"{instructions}/{split}.pkl", "rb"))["embeddings"]
+    with Path(f"{instructions}/{split}.pkl").open("rb") as file:
+        instructions = pickle.load(file)["embeddings"]
     return instructions
 
 
@@ -56,7 +60,7 @@ class CalvinDataset(Dataset):
         root,
         instructions=None,
         # dataset specification
-        taskvar=[("A", 0), ("B", 0), ("C", 0), ("D", 0)],
+        taskvar=None,
         max_episode_length=5,
         cache_size=0,
         max_episodes_per_task=100,
@@ -71,6 +75,9 @@ class CalvinDataset(Dataset):
         interpolation_length=100,
         relative_action=True,
     ):
+        if taskvar is None:
+            taskvar = [("A", 0), ("B", 0), ("C", 0), ("D", 0)]
+
         self._cache = {}
         self._cache_size = cache_size
         self._cameras = cameras
@@ -129,9 +136,9 @@ class CalvinDataset(Dataset):
         # Collect and trim all episodes in the dataset
         self._episodes = []
         self._num_episodes = 0
-        for task, eps in episodes_by_task.items():
+        for eps in episodes_by_task.values():
             if len(eps) > max_episodes_per_task and max_episodes_per_task > -1:
-                eps = random.sample(eps, max_episodes_per_task)
+                eps = random.sample(eps, max_episodes_per_task)  # noqa: PLW2901
             self._episodes += eps
             self._num_episodes += len(eps)
 

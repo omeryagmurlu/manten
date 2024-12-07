@@ -1,7 +1,8 @@
 from abc import ABC, abstractmethod
-import torch.nn as nn
-import torch
 from enum import Enum
+
+import torch
+from torch import nn
 
 from manten.agents.metrics.base_metric import BaseMetric
 
@@ -49,6 +50,6 @@ class BaseAgent(nn.Module, ABC):
 
     @abstractmethod
     def eval_step(
-        self, batch: dict, compare_gt: bool = False
+        self, batch: dict, *, compare_gt: bool = False
     ) -> tuple[BaseMetric, torch.Tensor]:
         raise NotImplementedError

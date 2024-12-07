@@ -1,5 +1,6 @@
-import torch
 import einops
+import torch
+
 from manten.agents.base_agent import BaseAgent
 from manten.agents.metrics.trajectory_metric import TrajectoryMetric, TrajectoryStats
 from manten.utils.dda_utils import (
@@ -9,6 +10,9 @@ from manten.utils.dda_utils import (
     normalise_quat,
     quaternion_to_matrix,
 )
+
+# TODO: noqa find a way to handle std input shape this is no way to live
+# ruff: noqa: PLR2004
 
 
 class RotationParametrization:
@@ -144,7 +148,7 @@ class ThreeDDAAgent(BaseAgent):
         )
 
     @torch.no_grad()
-    def eval_step(self, batch, compare_gt=False):
+    def eval_step(self, batch, *, compare_gt=False):
         if compare_gt:
             if "trajectory" not in batch:
                 raise ValueError("trajectory not found in batch")
@@ -152,7 +156,9 @@ class ThreeDDAAgent(BaseAgent):
         else:
             traj_len = 20  # # this is hardcoded but eeeh
 
-        (_, _, trajectory_mask, inputs, conditions) = self.process_batch(batch, eval=True)
+        (_, _, trajectory_mask, inputs, conditions) = self.process_batch(
+            batch, is_evaluation_mode=True
+        )
 
         B, _, D = inputs["curr_gripper"].shape
         # trajectory_shape = (B, trajectory_mask.size(1), D)
@@ -250,7 +256,7 @@ class ThreeDDAAgent(BaseAgent):
 
         return complete_traj
 
-    def process_batch(self, batch, eval=False):
+    def process_batch(self, batch, is_evaluation_mode=False):
         (
             gt_trajectory,
             gt_openness,
@@ -260,8 +266,8 @@ class ThreeDDAAgent(BaseAgent):
             instruction,
             curr_gripper,
         ) = self.process_input_transformations(
-            gt_trajectory=None if eval else batch["trajectory"][:, 1:],
-            trajectory_mask=None if eval else batch["trajectory_mask"][:, 1:],
+            gt_trajectory=None if is_evaluation_mode else batch["trajectory"][:, 1:],
+            trajectory_mask=None if is_evaluation_mode else batch["trajectory_mask"][:, 1:],
             rgb_obs=batch["rgbs"],
             pcd_obs=batch["pcds"],
             instruction=batch["instr"],
@@ -279,18 +285,19 @@ class ThreeDDAAgent(BaseAgent):
             gt_trajectory,
             gt_openness,
             trajectory_mask,
-            dict(
-                rgb_obs=rgb_obs,
-                pcd_obs=pcd_obs,
-                instruction=instruction,
-                curr_gripper=curr_gripper,
-            ),
-            dict(
+            {
+                "rgb_obs": rgb_obs,
+                "pcd_obs": pcd_obs,
+                "instruction": instruction,
+                "curr_gripper": curr_gripper,
+            },
+            {
                 **encoded,
-                has_3d=torch.ones((rgb_obs.shape[0],), device=rgb_obs.device).bool(),
-            ),
+                "has_3d": torch.ones((rgb_obs.shape[0],), device=rgb_obs.device).bool(),
+            },
         )
 
+    # not ideal but deal with it later
     def process_input_transformations(
         self, gt_trajectory, trajectory_mask, rgb_obs, pcd_obs, instruction, curr_gripper
     ):
@@ -368,14 +375,14 @@ class ThreeDDAAgent(BaseAgent):
         fps_feats, fps_pos = self.encoder.run_fps(
             context_feats.transpose(0, 1), self.encoder.relative_pe_layer(context)
         )
-        return dict(
-            context_feats=context_feats,
-            context=context,  # contextualized visual features
-            instr_feats=instr_feats,  # language features
-            adaln_gripper_feats=adaln_gripper_feats,  # gripper history features
-            fps_feats=fps_feats,
-            fps_pos=fps_pos,  # sampled visual features
-        )
+        return {
+            "context_feats": context_feats,
+            "context": context,  # contextualized visual features
+            "instr_feats": instr_feats,  # language features
+            "adaln_gripper_feats": adaln_gripper_feats,  # gripper history features
+            "fps_feats": fps_feats,
+            "fps_pos": fps_pos,  # sampled visual features
+        }
 
     def reverse_input_transformations(self, complete_traj):
         # Back to quaternion
