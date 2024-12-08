@@ -105,11 +105,13 @@ lr_scheduler:
 # _validation_calvin_data: ./data/calvin/packaged_D_D/validation
 # _instructions: instructions/calvin_task_D_D/
 
-_training_calvin_data: ./data/calvin/packaged_debug/training
-_validation_calvin_data: ./data/calvin/packaged_debug/validation
-_instructions: ./data/calvin/instructions/calvin_task_debug_D/
+__calvin_ver: task_D_D
 
-_batch_size: 4
+_training_calvin_data: ./data/calvin/packaged_${__calvin_ver}/training
+_validation_calvin_data: ./data/calvin/packaged_${__calvin_ver}/validation
+_instructions: ./data/calvin_instructions/packaged_${__calvin_ver}
+
+_batch_size: 30
 _num_workers: 4
 datamodule:
   _target_: manten.utils.dummy_datamodule.DummyDataModule

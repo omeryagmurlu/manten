@@ -4,7 +4,8 @@ import numpy as np
 from torch import nn
 from torch.nn import functional as F
 
-from .multihead_custom_attention import MultiheadCustomAttention
+# from .multihead_custom_attention import MultiheadCustomAttention as MultiheadAttention
+from .multihead_flash_attention import MultiheadFlashAttention as MultiheadAttention
 
 
 class ParallelAttentionLayer(nn.Module):
@@ -41,7 +42,7 @@ class ParallelAttentionLayer(nn.Module):
             self.adaln_1 = None
             if use_adaln:
                 self.adaln_1 = AdaLN(d_model)
-            self.sa1 = MultiheadCustomAttention(d_model, n_heads, dropout=dropout)
+            self.sa1 = MultiheadAttention(d_model, n_heads, dropout=dropout)
             self.dropout_1 = nn.Dropout(dropout)
             self.norm_1 = nn.LayerNorm(d_model)
 
@@ -50,7 +51,7 @@ class ParallelAttentionLayer(nn.Module):
             self.adaln_2 = None
             if use_adaln:
                 self.adaln_2 = AdaLN(d_model)
-            self.sa2 = MultiheadCustomAttention(d_model, n_heads, dropout=dropout)
+            self.sa2 = MultiheadAttention(d_model, n_heads, dropout=dropout)
             self.dropout_2 = nn.Dropout(dropout)
             self.norm_2 = nn.LayerNorm(d_model)
 
@@ -60,7 +61,7 @@ class ParallelAttentionLayer(nn.Module):
             self.adaln_12 = None
             if use_adaln:
                 self.adaln_12 = AdaLN(d_model)
-            self.cross_12 = MultiheadCustomAttention(
+            self.cross_12 = MultiheadAttention(
                 d_model, n_heads, dropout=dropout, slot_competition=slot_attention12
             )
             self.dropout_12 = nn.Dropout(dropout)
@@ -72,7 +73,7 @@ class ParallelAttentionLayer(nn.Module):
             self.adaln_21 = None
             if use_adaln:
                 self.adaln_21 = AdaLN(d_model)
-            self.cross_21 = MultiheadCustomAttention(
+            self.cross_21 = MultiheadAttention(
                 d_model, n_heads, dropout=dropout, slot_competition=slot_attention21
             )
             self.dropout_21 = nn.Dropout(dropout)
@@ -356,7 +357,7 @@ class FeedforwardLayer(nn.Module):
 class RelativeCrossAttentionLayer(nn.Module):
     def __init__(self, embedding_dim, num_heads, dropout=0.0, use_adaln=False):
         super().__init__()
-        self.multihead_attn = MultiheadCustomAttention(
+        self.multihead_attn = MultiheadAttention(
             embedding_dim, num_heads, dropout=dropout
         )
         self.norm = nn.LayerNorm(embedding_dim)
@@ -386,7 +387,7 @@ class RelativeCrossAttentionLayer(nn.Module):
 class SelfAttentionLayer(nn.Module):
     def __init__(self, embedding_dim, num_heads, dropout=0.0, use_adaln=False):
         super().__init__()
-        self.multihead_attn = MultiheadCustomAttention(
+        self.multihead_attn = MultiheadAttention(
             embedding_dim, num_heads, dropout=dropout
         )
         self.norm = nn.LayerNorm(embedding_dim)

@@ -11,15 +11,16 @@ class OptimizerConfigurator:
         self, *, agent, params_configs: list[ParamConfig] | None = None, default_params_config
     ):
         if params_configs is None:
-            params_configs = []
+            self.params_configs = []
+        else:
+            self.params_configs = [ dict(params_config_cfg.items()) for params_config_cfg in params_configs ]
+        self.default_params_config = dict(default_params_config.items())
         self.agent = agent
-        self.params_configs = params_configs
-        self.default_params_config = default_params_config
 
     def get_grouped_params(self):
         for name, param in self.agent.named_parameters():
             for config in self.params_configs:
-                if any(substring in name for substring in config.contains_substrings):
+                if any(substring in name for substring in config["contains_substrings"]):
                     if "params" not in config:
                         config["params"] = []
                     config["params"].append(param)

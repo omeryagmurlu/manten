@@ -270,6 +270,12 @@ def main(cfg):
         # also need to handle this but nvm for now: https://docs.nvidia.com/cuda/cublas/index.html#results-reproducibility
         torch.backends.cudnn.benchmark = False
 
+    logger.info("Torch version: %s", torch.__version__)
+    logger.info("CUDA version: %s", torch.version.cuda)
+    logger.info("CUDA available: %s", torch.cuda.is_available())
+    logger.info("CUDA_VISIBLE_DEVICES: %s", os.getenv('CUDA_VISIBLE_DEVICES'))
+    logger.info("CUDA device count: %d", torch.cuda.device_count())
+
     output_dir = hydra.core.hydra_config.HydraConfig.get().runtime.output_dir
     accelerator = hydra.utils.instantiate(
         cfg.accelerator, project_dir=output_dir + "/accelerate"
@@ -286,14 +292,11 @@ def main(cfg):
         init_dict["init_kwargs"]["wandb"]["dir"] = output_dir + "/tracker"
     accelerator.init_trackers(**init_dict)
 
-    # same for logging
-    logger.info("CUDA_VISIBLE_DEVICES: %d", os.environ.get("CUDA_VISIBLE_DEVICES", None))
-
     agent = hydra.utils.instantiate(cfg.agent)
 
     optimizer_configurator = hydra.utils.instantiate(cfg.optimizer_configurator, agent=agent)
     optimizer = hydra.utils.instantiate(
-        cfg.optimizer, OmegaConf.to_container(optimizer_configurator.get_grouped_params())
+        cfg.optimizer, optimizer_configurator.get_grouped_params()
     )
 
     # TODO: accelerate doesn't scale lr: https://huggingface.co/docs/accelerate/en/concept_guides/performance#learning-rates

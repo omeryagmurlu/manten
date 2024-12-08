@@ -14,7 +14,7 @@ dependencies:
   - torchaudio
   - pytorch-cuda=12.1
 
-  - dgl # requires torch<=2.4.0, but that's fine
+  - dgl # requires torch<=2.4.0, but that error's fine
 
   - pip:
       - hydra-core
@@ -23,16 +23,17 @@ dependencies:
       - tqdm
       - rootutils
 
-      - einops
-      - optree
-
       - diffusers[training]
       - transformers
-      - git+https://github.com/openai/CLIP.git
       - blosc
+      - einops
+      - optree
+      - git+https://github.com/openai/CLIP.git
+      - flash-attn
 
       # - pre-commit
       # - ipykernel
 
       - matplotlib
       - plotly
+      - tabulate
