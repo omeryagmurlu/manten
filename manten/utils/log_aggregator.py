@@ -35,11 +35,9 @@ class LogAggregator:
 
         if not self.list_of_logs:
             retval = {}
-        elif len(self.list_of_logs) == 1:
-            retval = self.list_of_logs[0]
         else:
             retval = {
-                key: value
+                f"{reduction.name.lower()}/{key}": value
                 for reduction in self.reductions
                 for key, value in self._collate_logs(self.list_of_logs, reduction).items()
             }
@@ -61,9 +59,7 @@ class LogAggregator:
         return {f"{self.prefix}{key}": value for key, value in logs.items()}
 
     @staticmethod
-    def _collate_logs(
-        list_of_logs: list[dict], reduction=Reduction.MEAN, rename_with_reduction=True
-    ):
+    def _collate_logs(list_of_logs: list[dict], reduction=Reduction.MEAN):
         match reduction:
             case Reduction.MEAN | Reduction.SUM | Reduction.MAX | Reduction.MIN:
                 keys = list(list_of_logs[0].keys())
@@ -77,8 +73,4 @@ class LogAggregator:
             case _:
                 raise ValueError(f"Unknown reduction: {reduction}")
 
-        if rename_with_reduction:
-            retval = {
-                f"{reduction.name.lower()}/{key}": value for key, value in retval.items()
-            }
         return retval

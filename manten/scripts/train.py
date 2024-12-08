@@ -273,7 +273,7 @@ def main(cfg):
     logger.info("Torch version: %s", torch.__version__)
     logger.info("CUDA version: %s", torch.version.cuda)
     logger.info("CUDA available: %s", torch.cuda.is_available())
-    logger.info("CUDA_VISIBLE_DEVICES: %s", os.getenv('CUDA_VISIBLE_DEVICES'))
+    logger.info("CUDA_VISIBLE_DEVICES: %s", os.getenv("CUDA_VISIBLE_DEVICES"))
     logger.info("CUDA device count: %d", torch.cuda.device_count())
 
     output_dir = hydra.core.hydra_config.HydraConfig.get().runtime.output_dir
@@ -292,7 +292,7 @@ def main(cfg):
         init_dict["init_kwargs"]["wandb"]["dir"] = output_dir + "/tracker"
     accelerator.init_trackers(**init_dict)
 
-    agent = hydra.utils.instantiate(cfg.agent)
+    agent = hydra.utils.instantiate(cfg.agent.agent)
 
     optimizer_configurator = hydra.utils.instantiate(cfg.optimizer_configurator, agent=agent)
     optimizer = hydra.utils.instantiate(
@@ -302,8 +302,7 @@ def main(cfg):
     # TODO: accelerate doesn't scale lr: https://huggingface.co/docs/accelerate/en/concept_guides/performance#learning-rates
     lr_scheduler = hydra.utils.instantiate(cfg.lr_scheduler, optimizer)
 
-    datamodule = hydra.utils.instantiate(cfg.datamodule)
-
+    datamodule = hydra.utils.instantiate(cfg.datamodule.datamodule)
     train_dataloader = datamodule.create_train_dataloader()
     test_dataloader = datamodule.create_test_dataloader()
 

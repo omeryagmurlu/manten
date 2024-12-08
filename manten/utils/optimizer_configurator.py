@@ -13,7 +13,9 @@ class OptimizerConfigurator:
         if params_configs is None:
             self.params_configs = []
         else:
-            self.params_configs = [ dict(params_config_cfg.items()) for params_config_cfg in params_configs ]
+            self.params_configs = [
+                dict(params_config_cfg.items()) for params_config_cfg in params_configs
+            ]
         self.default_params_config = dict(default_params_config.items())
         self.agent = agent
 

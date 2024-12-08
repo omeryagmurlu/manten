@@ -357,9 +357,7 @@ class FeedforwardLayer(nn.Module):
 class RelativeCrossAttentionLayer(nn.Module):
     def __init__(self, embedding_dim, num_heads, dropout=0.0, use_adaln=False):
         super().__init__()
-        self.multihead_attn = MultiheadAttention(
-            embedding_dim, num_heads, dropout=dropout
-        )
+        self.multihead_attn = MultiheadAttention(embedding_dim, num_heads, dropout=dropout)
         self.norm = nn.LayerNorm(embedding_dim)
         self.dropout = nn.Dropout(dropout)
         if use_adaln:
@@ -387,9 +385,7 @@ class RelativeCrossAttentionLayer(nn.Module):
 class SelfAttentionLayer(nn.Module):
     def __init__(self, embedding_dim, num_heads, dropout=0.0, use_adaln=False):
         super().__init__()
-        self.multihead_attn = MultiheadAttention(
-            embedding_dim, num_heads, dropout=dropout
-        )
+        self.multihead_attn = MultiheadAttention(embedding_dim, num_heads, dropout=dropout)
         self.norm = nn.LayerNorm(embedding_dim)
         self.dropout = nn.Dropout(dropout)
         if use_adaln:

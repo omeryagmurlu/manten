@@ -1,0 +1,46 @@
+_diffusion_timesteps: 25
+_embedding_dim: 192
+_num_history: 1 # kinda like 0, that part of the code is a mess
+_relative_action: ${_relative_action}
+_rotation_parametrization: "6D"
+agent:
+  _target_: manten.agents.three_dda_agent.ThreeDDAAgent
+  position_noise_scheduler:
+    _target_: diffusers.schedulers.DDPMScheduler
+    num_train_timesteps: ${..._diffusion_timesteps}
+    beta_schedule: scaled_linear
+    prediction_type: epsilon
+  rotation_noise_scheduler:
+    _target_: diffusers.schedulers.DDPMScheduler
+    num_train_timesteps: ${..._diffusion_timesteps}
+    beta_schedule: squaredcos_cap_v2
+    prediction_type: epsilon
+  rotation_parametrization:
+    _target_: manten.agents.three_dda_agent.RotationParametrization
+    rotation_parametrization: ${..._rotation_parametrization}
+    quaternion_format: wxyz
+  position_normalization:
+    _target_: manten.agents.three_dda_agent.PositionNormalization
+    gripper_loc_bounds: null # TODO get bounds somehow, this'll be partial and come from dataset
+  encoder:
+    _target_: manten.networks.three_dda.encoder.Encoder
+    backbone: "clip"
+    image_size: [256, 256]
+    embedding_dim: ${..._embedding_dim}
+    num_sampling_level: 1
+    nhist: ${..._num_history}
+    num_vis_ins_attn_layers: 2
+    fps_subsampling_factor: 3
+  noise_model:
+    _target_: manten.networks.three_dda.head.DiffusionHead
+    embedding_dim: ${..._embedding_dim}
+    use_instruction: True
+    nhist: ${..._num_history}
+    lang_enhanced: True
+    rotation_parametrization: ${..._rotation_parametrization}
+  metric:
+    _target_: manten.agents.metrics.three_dda_metric.ThreeDDAMetric
+  num_history: ${.._num_history}
+  relative: ${.._relative_action}
+  use_instruction: True
+  n_inference_steps: ${.._diffusion_timesteps}

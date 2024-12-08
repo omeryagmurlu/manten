@@ -8,9 +8,11 @@ pip install -e .
 ```
 
 ## data preparation
+
 see 3dda repo
 
 ## train
+
 see train.yaml and:
 
 ```

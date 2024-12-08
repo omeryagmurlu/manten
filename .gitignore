@@ -156,9 +156,9 @@ cython_debug/
 **/.vscode
 
 # Lightning-Hydra-Template
-configs/local/default.yaml
-data
+/configs/local/local.yaml
+/data
 .env
 .ruff_cache
-outputs/
+/outputs
 node_modules
