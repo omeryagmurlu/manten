@@ -10,6 +10,8 @@ defaults:
   - debug: null
 
 project_name: manten
+seed: ???
+deterministic: False
 
 _detailed_metrics_every_n_epochs: 10
 _save_every_n_epochs: 55
@@ -24,9 +26,7 @@ training:
   validate_ene_max_steps: 1000
   eval_train_ene_max_steps: 1000
   eval_test_ene_max_steps: 1000
-  seed: ???
-  deterministic: False
-  resume_from_save: False
+  resume_from_save: null
   log_aggregator:
     _target_: manten.utils.log_aggregator.LogAggregator
 

@@ -6,5 +6,4 @@ defaults:
 
 _relative_action: True
 
-training:
-  seed: 28_06
+seed: 28_06
