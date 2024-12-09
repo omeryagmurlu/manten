@@ -3,9 +3,5 @@ def test(_cfg):
 
 
 if __name__ == "__main__":
-    if True:
-        from manten.utils.utils_debug import monkeypatch_tensor_shape
-
-        monkeypatch_tensor_shape()
     # main()
     raise NotImplementedError

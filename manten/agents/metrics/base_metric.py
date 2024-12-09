@@ -14,19 +14,25 @@ class BaseMetric(ABC):
         self.ground = None
         self.prediction = None
 
+    def copy(self):
+        cpy = self.__class__()
+        cpy.ground = self.ground
+        cpy.prediction = self.prediction
+        return cpy
+
     @abstractmethod
     def loss(self):
         raise NotImplementedError
 
     @abstractmethod
-    def metrics(self):
+    def metrics(self) -> dict:
         raise NotImplementedError
 
-    def summary_metrics(self):
+    def summary_metrics(self) -> dict:
         """Return a summary of metrics. Useful for use in tqdm post_fix"""
         return self.metrics()
 
-    def visualize(self):
+    def visualize(self, **_) -> dict:
         """Return a visualization of the metric. Useful for tensorboard"""
         return
 
@@ -40,6 +46,11 @@ class BaseStats(BaseMetric, ABC):
 
     def reset(self):
         self.stats = None
+
+    def copy(self):
+        cpy = self.__class__()
+        cpy.stats = self.stats
+        return cpy
 
     def loss(self):
         raise ValueError("BaseStats does not support loss()")

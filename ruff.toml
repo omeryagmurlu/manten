@@ -55,6 +55,8 @@ ignore = [
     "ERA001", # enable later, deletes commented out code
     "T201",   # enable later, disallows print statements
 
+    # "TC001", # I'm not sure, see typing-only-first-party-import-tc001
+
     "RET504",  # unnecessary assign, and imho the make it more readable more often than not
     "TRY003",  # anal about exceptions, don't like it
     "EM101",   # anal exceptions

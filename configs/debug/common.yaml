@@ -1,0 +1,24 @@
+# @package _global_
+
+task_name: "debug"
+
+debug:
+  _target_: manten.utils.debug_utils.DebugUtils
+  monkeypatch_tensor_shape: True
+
+accelerator_init_trackers:
+  project_name: ${project_name}_debug
+
+# # sets level of all command line loggers to 'DEBUG'
+# # https://hydra.cc/docs/tutorials/basic/running_your_app/logging/
+# hydra:
+#   job_logging:
+#     root:
+#       level: DEBUG
+
+training:
+  save_every_n_epochs: 0
+  log_every_n_steps: 1
+  validate_every_n_epochs: 1
+  eval_train_every_n_epochs: 1
+  eval_test_every_n_epochs: 1

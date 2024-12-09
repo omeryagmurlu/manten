@@ -1,3 +1,4 @@
+import numpy as np
 import torch.nn.functional as F
 
 from manten.agents.metrics.base_metric import BaseMetric, BaseStats
@@ -37,6 +38,11 @@ class TrajectoryMetric(BaseMetric):
         super().reset()
         self.pred_stats.reset()
 
+    def copy(self):
+        new_metric = super().copy()
+        new_metric.pred_stats = self.pred_stats.copy()
+        return new_metric
+
     def loss(self):
         raise ValueError("TrajectoryMetric does not support loss()")
 
@@ -64,17 +70,31 @@ class TrajectoryMetric(BaseMetric):
         metrics = self.metrics()
         return {key: metrics[key] for key in ["mae_pos", "bce_open"]}
 
-    def visualize(self):
+    def visualize(self, sort_key=None, reduction_hint=None):
         """
         Returns an image showing both prediction and ground truth trajectory positions
         for the first sample in the batch in 3D.
         """
         from manten.utils.utils_visualization import visualize_2_pos_traj
 
-        sample_idx = 0
-        pred_pos = self.prediction[0][sample_idx].cpu().numpy()
-        gt_pos = self.ground[0][sample_idx].cpu().numpy()
+        if sort_key is None:
+            samples = [(0, "batch_first/vis_pos")]
+        else:
+            samples = []
+            values = self.metrics()[sort_key]
+            if reduction_hint == "min" or reduction_hint is None:
+                index = np.argmin(values)
+                samples.append((index, f"batch_min:{sort_key}/vis_pos"))
+            if reduction_hint == "max" or reduction_hint is None:
+                index = np.argmax(values)
+                samples.append((index, f"batch_max:{sort_key}/vis_pos"))
 
-        vis_pos_fiinb = visualize_2_pos_traj(pred_pos, gt_pos)
+        retval = {
+            key_name: visualize_2_pos_traj(
+                self.prediction[0][sample_idx].cpu().numpy(),
+                self.ground[0][sample_idx].cpu().numpy(),
+            )
+            for sample_idx, key_name in samples
+        }
 
-        return {"vis_pos_fiinb": vis_pos_fiinb}
+        return retval

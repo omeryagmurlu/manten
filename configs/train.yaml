@@ -2,10 +2,14 @@
 
 defaults:
   - _self_
+  - hydra: default
 
   # following are global
-  - experiment: null
+  - experiment: ???
   - optional local: local
+  - debug: null
+
+project_name: manten
 
 _detailed_metrics_every_n_epochs: 10
 _save_every_n_epochs: 55
@@ -20,13 +24,11 @@ training:
   validate_ene_max_steps: 1000
   eval_train_ene_max_steps: 1000
   eval_test_ene_max_steps: 1000
-  seed: 42
+  seed: ???
   deterministic: False
   resume_from_save: False
   log_aggregator:
     _target_: manten.utils.log_aggregator.LogAggregator
-    reductions:
-      - MEAN
 
 accelerator:
   _target_: accelerate.Accelerator
@@ -35,7 +37,7 @@ accelerator:
   log_with: wandb
 
 accelerator_init_trackers:
-  project_name: manten
+  project_name: ${project_name}
   init_kwargs:
     wandb:
       entity: "omeryagmurlu"
