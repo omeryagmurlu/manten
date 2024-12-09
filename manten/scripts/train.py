@@ -310,8 +310,14 @@ def main(cfg):
 
     output_dir = hydra.core.hydra_config.HydraConfig.get().runtime.output_dir
 
-    ddp_kwargs = DistributedDataParallelKwargs(find_unused_parameters=False, broadcast_buffers=False)
-    accelerator = Accelerator(**(OmegaConf.to_container(cfg.accelerator, resolve=True)), project_dir=output_dir + "/accelerate", kwargs_handlers=[ddp_kwargs])
+    ddp_kwargs = DistributedDataParallelKwargs(
+        find_unused_parameters=False, broadcast_buffers=False
+    )
+    accelerator = Accelerator(
+        **(OmegaConf.to_container(cfg.accelerator, resolve=True)),
+        project_dir=output_dir + "/accelerate",
+        kwargs_handlers=[ddp_kwargs],
+    )
 
     if accelerator.is_main_process and output_dir is not None:
         mkdir(output_dir)

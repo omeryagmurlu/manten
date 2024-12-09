@@ -5,11 +5,13 @@ import einops
 import torch
 from torch import nn
 from torch.nn import functional as F
-from torchvision.ops import FeaturePyramidNetwork
 
 from manten.networks.clip import load_clip
 from manten.networks.position_encodings import RotaryPositionEncoding3D
 from manten.networks.resnet import load_resnet18, load_resnet50
+from manten.networks.three_dda.custom_feature_pyramid_network import (
+    UsageAwareMemoryEfficientFeaturePyramidNetwork,
+)
 from manten.networks.three_dda.layers import (
     FFWRelativeCrossAttentionModule,
     ParallelAttention,
@@ -48,9 +50,6 @@ class Encoder(nn.Module):
             p.requires_grad = False
 
         # Semantic visual features at different scales
-        self.feature_pyramid = FeaturePyramidNetwork(
-            [64, 256, 512, 1024, 2048], embedding_dim
-        )
         if self.image_size == (128, 128):
             # Coarse RGB features are the 2nd layer of the feature pyramid
             # at 1/4 resolution (32x32)
@@ -65,6 +64,15 @@ class Encoder(nn.Module):
             # at 1/2 resolution (128x128)
             self.feature_map_pyramid = ["res3", "res1", "res1", "res1"]
             self.downscaling_factor_pyramid = [8, 2, 2, 2]
+        self.feature_pyramid = UsageAwareMemoryEfficientFeaturePyramidNetwork(
+            in_channels_list=[64, 256, 512, 1024, 2048],
+            out_channels=embedding_dim,
+            sampled_pyramid=[
+                # because clip returns rgb1, rgb2, rgb3...
+                (int(s[-1]) - 1)
+                for s in self.feature_map_pyramid[: self.num_sampling_level]
+            ],
+        )
 
         # 3D relative positional embeddings
         self.relative_pe_layer = RotaryPositionEncoding3D(embedding_dim)
