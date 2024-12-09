@@ -145,7 +145,7 @@ class TrainState:
 
 
 # TODO: This is apparently a very long and complex function, but it'll have to do for now
-def train(  # noqa: C901, PLR0915
+def train(  # noqa: C901, PLR0915, PLR0912
     cfg,
     accelerator,
     agent,
@@ -176,7 +176,11 @@ def train(  # noqa: C901, PLR0915
     def every_n_global_steps(n):
         return bool(n) and ((state.global_step + 1) % n == 0 or (step + 1) == len_train_dl)
 
+    def every_n_universe_steps(n):
+        return bool(n) and ( ((state.global_step + 1) * num_processes) % n < num_processes or (step + 1) == len_train_dl )
+
     ism = accelerator.is_main_process
+    num_processes = accelerator.num_processes
     len_train_dl = len(train_dl)
 
     state = TrainState()
@@ -198,10 +202,9 @@ def train(  # noqa: C901, PLR0915
     for state.epoch in range(start_epoch, cfg.num_epochs):
         log_aggregator.reset()
         agent.train()
-        for step, batch in enumerate(
+        for step, batch in enumerate( # train_dl syncs rnd seed across processes
             progress := progbar(train_dl, desc=f"epoch {state.epoch}")
         ):
-            # accelerate also handles disabling synchronisation
             with accelerator.accumulate(agent):
                 metric = agent(AgentMode.TRAIN, batch)
                 loss = metric.loss()
@@ -217,7 +220,6 @@ def train(  # noqa: C901, PLR0915
             overview_logs = {
                 "loss": loss.detach().item(),
                 "lr": lr_scheduler.get_last_lr()[0],
-                "step": step,
                 "global_step": state.global_step,
             }
             progress.set_postfix(**overview_logs)
@@ -225,69 +227,78 @@ def train(  # noqa: C901, PLR0915
             # accelerate already has @on_main_process deco on trackers, so this here
             # is mostly redundant, it only prevents agent.metrics() from being called
             # on non-main processes at all
-            if ism and every_n_global_steps(cfg.log_every_n_steps):
+            if ism and every_n_universe_steps(cfg.log_every_n_steps):
                 upl = log_aggregator.log_collate(metric, "train/")
                 upl.update(overview_logs)
-                upl.update({"epoch": state.epoch})
+                upl.update({
+                    "step": step,
+                    "epoch": state.epoch,
+                    "universe_step": state.global_step * num_processes,
+                })
                 accelerator.log(upl, step=state.global_step)
 
             state.global_step += 1
 
-        if ism and every_n_epochs(cfg.validate_every_n_epochs):
-            validate(
-                test_dl,
-                agent,
-                max_steps=cfg.validate_ene_max_steps,
-                progbar_kwargs={"desc": f"epoch {state.epoch} (validate)"},
-                log_aggregator=log_aggregator,
-            )
-            logger.info("validate@epoch:%d", state.epoch)
-            accelerator.log(
-                validate_logs := log_aggregator.collate("validate/"), step=state.global_step
-            )
-            print(tabulate(validate_logs.items()))
-
-        for every_n, dl, max_steps, split in [
-            (cfg.eval_train_every_n_epochs, train_dl, cfg.eval_train_ene_max_steps, "train"),
-            (cfg.eval_test_every_n_epochs, test_dl, cfg.eval_test_ene_max_steps, "test"),
-        ]:
-            if ism and every_n_epochs(every_n):
-                eeval(
-                    dl,
+        if every_n_epochs(cfg.validate_every_n_epochs):
+            accelerator.wait_for_everyone()
+            if ism:
+                validate(
+                    test_dl,
                     agent,
-                    max_steps=max_steps,
-                    progbar_kwargs={"desc": f"epoch {state.epoch} (eval:{split})"},
+                    max_steps=cfg.validate_ene_max_steps,
+                    progbar_kwargs={"desc": f"epoch {state.epoch} (validate)"},
                     log_aggregator=log_aggregator,
                 )
-                logger.info("evaluation:%s@epoch:%d", split, state.epoch)
+                logger.info("validate@epoch:%d", state.epoch)
+                accelerator.log(
+                    validate_logs := log_aggregator.collate("validate/"), step=state.global_step
+                )
+                print(tabulate(validate_logs.items()))
 
-                eval_logs = log_aggregator.collate(f"eval-{split}/", reset=False)
-                print(tabulate(eval_logs.items()))
-                eval_logs.update(log_aggregator.create_vis_logs("mae_pos"))
-                accelerator.log(eval_logs, step=state.global_step)
+        for every_n, dl, max_steps, split in [
+            # (cfg.eval_train_every_n_epochs, train_dl, cfg.eval_train_ene_max_steps, "train"),
+            (cfg.eval_test_every_n_epochs, test_dl, cfg.eval_test_ene_max_steps, "test"),
+        ]:
+            if every_n_epochs(every_n):
+                accelerator.wait_for_everyone()
+                if ism:
+                    eeval(
+                        dl,
+                        agent,
+                        max_steps=max_steps,
+                        progbar_kwargs={"desc": f"epoch {state.epoch} (eval:{split})"},
+                        log_aggregator=log_aggregator,
+                    )
+                    logger.info("evaluation:%s@epoch:%d", split, state.epoch)
 
-                log_aggregator.reset()
+                    eval_logs = log_aggregator.collate(f"eval-{split}/", reset=False)
+                    print(tabulate(eval_logs.items()))
+                    eval_logs.update(log_aggregator.create_vis_logs("mae_pos"))
+                    accelerator.log(eval_logs, step=state.global_step)
 
-        if ism and every_n_epochs(cfg.save_every_n_epochs):
+                    log_aggregator.reset()
+
+        if every_n_epochs(cfg.save_every_n_epochs):
             accelerator.wait_for_everyone()
-            checkpoint_path = f"{accelerator.project_dir}/checkpoint_{state.epoch}"
-            accelerator.save_state(checkpoint_path)
-            logger.info("checkpoint@epoch:%d saved to %s", state.epoch, checkpoint_path)
+            if ism:
+                checkpoint_path = f"{accelerator.project_dir}/checkpoint_{state.epoch}"
+                accelerator.save_state(checkpoint_path)
+                logger.info("checkpoint@epoch:%d saved to %s", state.epoch, checkpoint_path)
 
-            if overview_logs["loss"] < state.best_loss:
-                state.best_loss = overview_logs["loss"]
-                best_checkpoint_path = f"{accelerator.project_dir}/best_checkpoint"
-                accelerator.save_state(best_checkpoint_path)
-                write_json(
-                    f"{accelerator.project_dir}/best_checkpoint/overview_logs.json",
-                    overview_logs,
-                )
-                logger.info(
-                    "best checkpoint@epoch:%d with loss %.4f saved to %s",
-                    state.epoch,
-                    state.best_loss,
-                    best_checkpoint_path,
-                )
+                if overview_logs["loss"] < state.best_loss:
+                    state.best_loss = overview_logs["loss"]
+                    best_checkpoint_path = f"{accelerator.project_dir}/best_checkpoint"
+                    accelerator.save_state(best_checkpoint_path)
+                    write_json(
+                        f"{accelerator.project_dir}/best_checkpoint/overview_logs.json",
+                        overview_logs,
+                    )
+                    logger.info(
+                        "best checkpoint@epoch:%d with loss %.4f saved to %s",
+                        state.epoch,
+                        state.best_loss,
+                        best_checkpoint_path,
+                    )
 
 
 @hydra.main(version_base=None, config_path=str(root / "configs"), config_name="train")
@@ -338,8 +349,8 @@ def main(cfg):
     train_dataloader = datamodule.create_train_dataloader()
     test_dataloader = datamodule.create_test_dataloader()
 
-    (agent, optimizer, train_dataloader, test_dataloader, lr_scheduler) = accelerator.prepare(
-        agent, optimizer, train_dataloader, test_dataloader, lr_scheduler
+    (agent, optimizer, train_dataloader, lr_scheduler) = accelerator.prepare(
+        agent, optimizer, train_dataloader, lr_scheduler
     )
 
     log_aggregator = hydra.utils.instantiate(cfg.training.log_aggregator)

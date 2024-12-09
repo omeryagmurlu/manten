@@ -1,7 +1,0 @@
-# @package _global_
-
-defaults:
-  - common
-
-training:
-  num_epochs: 1

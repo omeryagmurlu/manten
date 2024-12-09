@@ -15,10 +15,3 @@ accelerator_init_trackers:
 #   job_logging:
 #     root:
 #       level: DEBUG
-
-training:
-  save_every_n_epochs: 0
-  log_every_n_steps: 1
-  validate_every_n_epochs: 1
-  eval_train_every_n_epochs: 1
-  eval_test_every_n_epochs: 1
