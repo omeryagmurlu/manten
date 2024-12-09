@@ -62,8 +62,8 @@ def main(cfg):
     train_dataloader = datamodule.create_train_dataloader()
     test_dataloader = datamodule.create_test_dataloader()
 
-    (agent, optimizer, train_dataloader, lr_scheduler) = accelerator.prepare(
-        agent, optimizer, train_dataloader, lr_scheduler
+    (agent, optimizer, train_dataloader, test_dataloader, lr_scheduler) = accelerator.prepare(
+        agent, optimizer, train_dataloader, test_dataloader, lr_scheduler
     )
 
     loops = Loops(

@@ -1,8 +1,8 @@
 from dataclasses import dataclass, field
 from typing import Protocol
 
-import tabulate
 import torch
+from tabulate import tabulate
 
 from manten.agents.base_agent import AgentMode
 from manten.utils.logging import get_logger
@@ -83,7 +83,7 @@ class Loops:
             mean_epoch_loss, last_batch_loss = self.train_loop()
 
             if self.every_n_epochs_wait_fe_on_ism(self.cfg.validate_every_n_epochs):
-                self.validate_loop()
+                self.validation_loop()
 
             # if self.every_n_epochs_wait_fe_on_ism(self.cfg.eval_train_every_n_epochs):
             #     self.evaluation_loop(
@@ -98,9 +98,10 @@ class Loops:
         logger.info("training finished, trained for %d epochs", self.state.epoch)
 
     def begin_sanity_check(self):
-        logger.info("starting sanity check")
-        self.sanity_check_loop()
-        logger.info("sanity check successful")
+        if bool(self.cfg.sanity_check):
+            logger.info("starting sanity check")
+            self.sanity_check_loop()
+            logger.info("sanity check successful")
 
     def train_loop(self) -> tuple[float, float]:
         self.log_aggregator.reset()
