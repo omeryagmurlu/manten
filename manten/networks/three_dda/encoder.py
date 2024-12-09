@@ -75,8 +75,8 @@ class Encoder(nn.Module):
             embedding_dim, num_attn_heads, num_layers=3, use_adaln=False
         )
 
-        # Goal gripper learnable features
-        self.goal_gripper_embed = nn.Embedding(1, embedding_dim)
+        # # Goal gripper learnable features
+        # self.goal_gripper_embed = nn.Embedding(1, embedding_dim)
 
         # Instruction encoder
         self.instruction_encoder = nn.Linear(512, embedding_dim)
@@ -111,21 +111,21 @@ class Encoder(nn.Module):
             curr_gripper, self.curr_gripper_embed, context_feats, context
         )
 
-    def encode_goal_gripper(self, goal_gripper, context_feats, context):
-        """
-        Compute goal gripper position features and positional embeddings.
+    # def encode_goal_gripper(self, goal_gripper, context_feats, context):
+    #     """
+    #     Compute goal gripper position features and positional embeddings.
 
-        Args:
-            - goal_gripper: (B, 3+)
+    #     Args:
+    #         - goal_gripper: (B, 3+)
 
-        Returns:
-            - goal_gripper_feats: (B, 1, F)
-            - goal_gripper_pos: (B, 1, F, 2)
-        """
-        (goal_gripper_feats, goal_gripper_pos) = self._encode_gripper(
-            goal_gripper[:, None], self.goal_gripper_embed, context_feats, context
-        )
-        return (goal_gripper_feats, goal_gripper_pos)
+    #     Returns:
+    #         - goal_gripper_feats: (B, 1, F)
+    #         - goal_gripper_pos: (B, 1, F, 2)
+    #     """
+    #     (goal_gripper_feats, goal_gripper_pos) = self._encode_gripper(
+    #         goal_gripper[:, None], self.goal_gripper_embed, context_feats, context
+    #     )
+    #     return (goal_gripper_feats, goal_gripper_pos)
 
     def _encode_gripper(self, gripper, gripper_embed, context_feats, context):
         """

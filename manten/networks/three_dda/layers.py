@@ -80,7 +80,7 @@ class ParallelAttentionLayer(nn.Module):
             self.norm_21 = nn.LayerNorm(d_model)
 
         # FFN-1
-        if self_attention1 or cross_attention1:
+        if (self_attention1 or cross_attention1) and apply_ffn:
             self.adaln_ff1 = None
             if use_adaln:
                 self.adaln_ff1 = AdaLN(d_model)
@@ -94,7 +94,7 @@ class ParallelAttentionLayer(nn.Module):
             self.norm_122 = nn.LayerNorm(d_model)
 
         # FFN-2
-        if self_attention2 or cross_attention2:
+        if (self_attention2 or cross_attention2) and apply_ffn:
             self.adaln_ff2 = None
             if use_adaln:
                 self.adaln_ff2 = AdaLN(d_model)

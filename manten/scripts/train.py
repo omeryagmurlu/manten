@@ -3,7 +3,8 @@ from dataclasses import dataclass, field
 
 import hydra
 import torch
-from accelerate.utils import set_seed
+from accelerate import Accelerator
+from accelerate.utils import DistributedDataParallelKwargs, set_seed
 from omegaconf import OmegaConf
 from tabulate import tabulate
 
@@ -77,14 +78,12 @@ def loop_factory(
 
 
 def do_agent_inference_validate(agent, batch, **_):
-    agent.reset()
     with torch.inference_mode():
         metric = agent(AgentMode.VALIDATE, batch)
     return metric
 
 
 def do_agent_inference_eval(agent, batch, **_):
-    agent.reset()
     with torch.inference_mode():
         trajectory, metric = agent(AgentMode.EVAL, batch, compare_gt=True)
     return trajectory, metric
@@ -202,7 +201,6 @@ def train(  # noqa: C901, PLR0915
         for step, batch in enumerate(
             progress := progbar(train_dl, desc=f"epoch {state.epoch}")
         ):
-            agent.reset()
             # accelerate also handles disabling synchronisation
             with accelerator.accumulate(agent):
                 metric = agent(AgentMode.TRAIN, batch)
@@ -311,9 +309,9 @@ def main(cfg):
     logger.info("CUDA device count: %d", torch.cuda.device_count())
 
     output_dir = hydra.core.hydra_config.HydraConfig.get().runtime.output_dir
-    accelerator = hydra.utils.instantiate(
-        cfg.accelerator, project_dir=output_dir + "/accelerate"
-    )
+
+    ddp_kwargs = DistributedDataParallelKwargs(find_unused_parameters=False, broadcast_buffers=False)
+    accelerator = Accelerator(**(OmegaConf.to_container(cfg.accelerator, resolve=True)), project_dir=output_dir + "/accelerate", kwargs_handlers=[ddp_kwargs])
 
     if accelerator.is_main_process and output_dir is not None:
         mkdir(output_dir)

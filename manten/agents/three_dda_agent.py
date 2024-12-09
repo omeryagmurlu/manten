@@ -215,7 +215,7 @@ class ThreeDDAAgent(BaseAgent):
             x_0[..., 3:9], epsilon_t[..., 3:9], timesteps
         )
 
-        (epsilon_t_pos_pred, epsilon_t_rot_pred, _, openness_pred) = self.noise_model(
+        (epsilon_t_pos_pred, epsilon_t_rot_pred, openness_pred) = self.noise_model(
             trajectory=torch.cat((x_t_pos, x_t_rot), -1), timestep=timesteps, **conditions
         )
 
@@ -240,7 +240,7 @@ class ThreeDDAAgent(BaseAgent):
         timesteps = self.position_noise_scheduler.timesteps
         assert torch.allclose(self.rotation_noise_scheduler.timesteps, timesteps)
         for t in timesteps:
-            (epsilon_t_pos_pred, epsilon_t_rot_pred, _, openness_pred) = self.noise_model(
+            (epsilon_t_pos_pred, epsilon_t_rot_pred, openness_pred) = self.noise_model(
                 trajectory=sampled_trajectory, timestep=t * ones_like_timesteps, **conditions
             )
             # out = out[-1]  # keep only last layer's output # why remove batch???

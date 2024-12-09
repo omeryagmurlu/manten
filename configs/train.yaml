@@ -31,7 +31,6 @@ training:
     _target_: manten.utils.log_aggregator.LogAggregator
 
 accelerator:
-  _target_: accelerate.Accelerator
   mixed_precision: bf16
   gradient_accumulation_steps: 1
   log_with: wandb

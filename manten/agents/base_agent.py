@@ -28,8 +28,9 @@ class BaseAgent(nn.Module, ABC):
     def forward(self, agent_mode: AgentMode, *args, **kwargs):
         """
         forward method
-        accelerate(DDP) adds some hooks to the forward method, so route the calls through it
+        DDP adds some hooks to the forward method, so route the calls through it
         """
+        self.reset()
         match agent_mode:
             case AgentMode.TRAIN:
                 return self.train_step(*args, **kwargs)

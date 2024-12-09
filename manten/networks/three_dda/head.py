@@ -184,7 +184,7 @@ class DiffusionHead(nn.Module):
         traj_feats = einops.rearrange(traj_feats, "b l c -> l b c")
         context_feats = einops.rearrange(context_feats, "b l c -> l b c")
         adaln_gripper_feats = einops.rearrange(adaln_gripper_feats, "b l c -> l b c")
-        (pos_pred, rot_pred, joints_pred, openess_pred) = self.prediction_head(
+        (pos_pred, rot_pred, openess_pred) = self.prediction_head(
             trajectory[..., :3],
             traj_feats,
             context[..., :3],
@@ -196,7 +196,7 @@ class DiffusionHead(nn.Module):
             instr_feats,
             has_3d,
         )
-        return (pos_pred, rot_pred, joints_pred, openess_pred)
+        return (pos_pred, rot_pred, openess_pred)
 
     def prediction_head(
         self,
@@ -266,16 +266,11 @@ class DiffusionHead(nn.Module):
             features, rel_pos, time_embs, num_gripper, instr_feats
         )
 
-        # # Joint Position head
-        # joints, _ = self.predict_joints(
-        #     features, rel_pos, time_embs, num_gripper, instr_feats
-        # )
-
         # Openness head from position head
         openness = self.openness_predictor(position_features)
 
         # return position, rotation, joints, openness
-        return (position, rotation, 0, openness)
+        return (position, rotation, openness)
 
     def encode_denoising_timestep(self, timestep, curr_gripper_features):
         """
