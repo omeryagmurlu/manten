@@ -7,31 +7,22 @@ from tabulate import tabulate
 from manten.agents.base_agent import AgentMode
 from manten.utils.logging import get_logger
 from manten.utils.progbar import progbar
+from manten.utils.utils_decorators import with_state_dict
 
 logger = get_logger(__name__)
 
 
 @dataclass
+@with_state_dict("epoch", "global_step", "best_mean_train_epoch_loss")
 class LoopsState:
     epoch: int = field(default=0)
     global_step: int = field(default=0)
     best_mean_train_epoch_loss: float = field(default=float("inf"))
 
-    def state_dict(self):
-        return {
-            "epoch": self.epoch,
-            "global_step": self.global_step,
-            "best_mean_train_epoch_loss": self.best_mean_train_epoch_loss,
-        }
-
-    def load_state_dict(self, state_dict):
-        self.epoch = state_dict["epoch"]
-        self.global_step = state_dict["global_step"]
-        self.best_mean_train_epoch_loss = state_dict["best_mean_train_epoch_loss"]
-
 
 class LoopsConfig(Protocol):
     num_epochs: int
+    max_steps: int
     sanity_check: int
     log_every_n_steps: int
     save_every_n_epochs: int
@@ -79,21 +70,23 @@ class Loops:
 
         logger.info("starting training")
         # loop control variable self overwrites as it iterates, but that's what we want
-        for self.state.epoch in range(self.state.epoch, self.cfg.num_epochs):  # noqa: B020
+        to_epoch = self.cfg.num_epochs
+        starting_epoch = self.state.epoch
+        for self.state.epoch in range(starting_epoch, to_epoch):
             mean_epoch_loss, last_batch_loss = self.train_loop()
 
-            if self.every_n_epochs_wait_fe_on_ism(self.cfg.validate_every_n_epochs):
+            if self.every_n_epochs(self.cfg.validate_every_n_epochs):
                 self.validation_loop()
 
-            # if self.every_n_epochs_wait_fe_on_ism(self.cfg.eval_train_every_n_epochs):
-            #     self.evaluation_loop(
-            #         self.train_dl, self.cfg.eval_train_ene_max_steps, "train"
-            #     )
+            if self.every_n_epochs(self.cfg.eval_train_every_n_epochs):
+                self.evaluation_loop(
+                    self.train_dl, self.cfg.eval_train_ene_max_steps, "train"
+                )
 
-            if self.every_n_epochs_wait_fe_on_ism(self.cfg.eval_test_every_n_epochs):
+            if self.every_n_epochs(self.cfg.eval_test_every_n_epochs):
                 self.evaluation_loop(self.test_dl, self.cfg.eval_test_ene_max_steps, "test")
 
-            if self.every_n_epochs_wait_fe_on_ism(self.cfg.save_every_n_epochs):
+            if self.every_n_epochs(self.cfg.save_every_n_epochs):
                 self.save_checkpoint(mean_epoch_loss)
         logger.info("training finished, trained for %d epochs", self.state.epoch)
 
@@ -108,8 +101,16 @@ class Loops:
         self.agent.train()
         train_epoch_losses = []
         for step, batch in enumerate(  # train_dl syncs rnd seed across processes
-            progress := progbar(self.train_dl, desc=f"epoch {self.state.epoch}")
+            progress := progbar(
+                self.train_dl,
+                desc=f"epoch {self.state.epoch}",
+                total=min(len(self.train_dl), self.cfg.max_steps)
+            )
         ):
+            if step == self.cfg.max_steps:
+                progress.close()
+                break
+    
             metric, loss = self.train_step(batch)
 
             train_epoch_losses.append(loss := loss.detach().item())
@@ -163,11 +164,15 @@ class Loops:
             self.log_aggregator.log(metric)
 
         logger.info("validate@epoch:%d", self.state.epoch)
-        self.accelerator.log(
-            validate_logs := self.log_aggregator.collate("validate/"),
-            step=self.state.global_step,
-        )
-        print(tabulate(validate_logs.items()))
+
+        self.log_aggregator.all_gather()
+        if self.accelerator.is_main_process:
+            self.accelerator.log(
+                validate_logs := self.log_aggregator.collate("validate/"),
+                step=self.state.global_step,
+            )
+            print(tabulate(validate_logs.items()))
+        self.log_aggregator.reset()
 
     def evaluation_loop(self, dataloader, max_steps, split) -> None:
         self.log_aggregator.reset()
@@ -191,10 +196,12 @@ class Loops:
 
         logger.info("evaluation:%s@epoch:%d", split, self.state.epoch)
 
-        eval_logs = self.log_aggregator.collate(f"eval-{split}/", reset=False)
-        print(tabulate(eval_logs.items()))
-        eval_logs.update(self.log_aggregator.create_vis_logs("mae_pos"))
-        self.accelerator.log(eval_logs, step=self.state.global_step)
+        self.log_aggregator.all_gather()
+        if self.accelerator.is_main_process:
+            eval_logs = self.log_aggregator.collate(f"eval-{split}/", reset=False)
+            print(tabulate(eval_logs.items()))
+            eval_logs.update(self.log_aggregator.create_vis_logs("mae_pos"))
+            self.accelerator.log(eval_logs, step=self.state.global_step)
         self.log_aggregator.reset()
 
     def sanity_check_loop(self):
@@ -266,6 +273,7 @@ class Loops:
         )
 
     def save_checkpoint(self, mean_epoch_loss):
+        self.accelerator.wait_for_everyone()
         checkpoint_path = f"{self.accelerator.project_dir}/checkpoint_{self.state.epoch}"
         self.accelerator.save_state(checkpoint_path)
         logger.info("checkpoint@epoch:%d saved to %s", self.state.epoch, checkpoint_path)
@@ -286,13 +294,6 @@ class Loops:
             (self.state.epoch + 1) % n == 0
             or (self.state.epoch + 1) == self.cfg.num_epochs  # or last epoch
         )
-
-    def every_n_epochs_wait_fe_on_ism(self, n):
-        if not self.every_n_epochs(n):
-            return False
-
-        self.accelerator.wait_for_everyone()
-        return self.accelerator.is_main_process
 
     def every_n_global_steps(self, n):
         return bool(n) and (

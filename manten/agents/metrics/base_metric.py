@@ -1,6 +1,10 @@
 from abc import ABC, abstractmethod
 
+from manten.utils.utils_decorators import with_shallow_copy, with_state_dict
 
+
+@with_state_dict("ground", "prediction")
+@with_shallow_copy("ground", "prediction")
 class BaseMetric(ABC):
     def __init__(self):
         self.ground = None
@@ -13,12 +17,6 @@ class BaseMetric(ABC):
     def reset(self):
         self.ground = None
         self.prediction = None
-
-    def copy(self):
-        cpy = self.__class__()
-        cpy.ground = self.ground
-        cpy.prediction = self.prediction
-        return cpy
 
     @abstractmethod
     def loss(self):
@@ -37,6 +35,8 @@ class BaseMetric(ABC):
         return
 
 
+@with_state_dict("stats")
+@with_shallow_copy("stats")
 class BaseStats(BaseMetric, ABC):
     def __init__(self):
         self.stats = None
@@ -46,11 +46,6 @@ class BaseStats(BaseMetric, ABC):
 
     def reset(self):
         self.stats = None
-
-    def copy(self):
-        cpy = self.__class__()
-        cpy.stats = self.stats
-        return cpy
 
     def loss(self):
         raise ValueError("BaseStats does not support loss()")

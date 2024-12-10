@@ -2,16 +2,21 @@
 
 task_name: "debug"
 
-debug:
+debug: # order matters here
   _target_: manten.utils.debug_utils.DebugUtils
+  # env_set:
+  #   # this is not working via hydra, set manually in shell if you have problems
+  #   TORCH_DISTRIBUTED_DEBUG: DETAIL
+  #   ACCELERATE_DEBUG_MODE: 1
   monkeypatch_tensor_shape: True
+
 
 accelerator_init_trackers:
   project_name: ${project_name}_debug
 
+# hydra:
 # # sets level of all command line loggers to 'DEBUG'
 # # https://hydra.cc/docs/tutorials/basic/running_your_app/logging/
-# hydra:
 #   job_logging:
 #     root:
 #       level: DEBUG

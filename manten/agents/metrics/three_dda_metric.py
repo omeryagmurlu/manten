@@ -1,9 +1,11 @@
 import torch.nn.functional as F
 
 from manten.agents.metrics.base_metric import BaseMetric
+from manten.utils.utils_decorators import with_shallow_copy
 from manten.utils.utils_pytree import with_tree_map
 
 
+@with_shallow_copy("pos_weight", "ortho6d_weight", "open_weight")
 class ThreeDDAMetric(BaseMetric):
     def __init__(self, pos_weight=30.0, ortho6d_weight=10.0, open_weight=1.0):
         super().__init__()

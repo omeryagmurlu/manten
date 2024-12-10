@@ -1,31 +1,26 @@
-import os
-
 import hydra
-import torch
-from accelerate import Accelerator
-from accelerate.utils import DistributedDataParallelKwargs, set_seed
-from omegaconf import OmegaConf
 
 from manten.utils.logging import get_logger
-from manten.utils.loops import Loops
 from manten.utils.root import root
-from manten.utils.utils_file import mkdir
 
 logger = get_logger(__name__)
 
+def setup(cfg):
+    import os
 
-@hydra.main(version_base=None, config_path=str(root / "configs"), config_name="train")
-def main(cfg):
-    """
-    Main function to train an agent.
-    """
+    import torch
+    from accelerate import Accelerator
+    from accelerate.utils import DistributedDataParallelKwargs, set_seed
+    from omegaconf import OmegaConf
+
+    from manten.utils.loops import Loops
+    from manten.utils.utils_file import mkdir
+
     set_seed(cfg.seed, deterministic=cfg.deterministic)
     if cfg.deterministic:
         # also need to handle this but nvm for now: https://docs.nvidia.com/cuda/cublas/index.html#results-reproducibility
         torch.backends.cudnn.benchmark = False
 
-    if hasattr(cfg, "debug") and cfg.debug is not None:
-        hydra.utils.instantiate(cfg.debug)
     logger.info("Torch version: %s", torch.__version__)
     logger.info("CUDA version: %s", torch.version.cuda)
     logger.info("CUDA available: %s", torch.cuda.is_available())
@@ -91,6 +86,19 @@ def main(cfg):
     loops.begin_training()
 
     # potentially online eval?
+
+    accelerator.end_training()
+
+
+@hydra.main(version_base=None, config_path=str(root / "configs"), config_name="train")
+def main(cfg):
+    """
+    Main function to train an agent.
+    """
+    if hasattr(cfg, "debug") and cfg.debug is not None:
+        hydra.utils.instantiate(cfg.debug)
+
+    setup(cfg)
 
 
 if __name__ == "__main__":

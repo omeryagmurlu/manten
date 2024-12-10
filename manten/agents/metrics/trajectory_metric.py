@@ -2,6 +2,7 @@ import numpy as np
 import torch.nn.functional as F
 
 from manten.agents.metrics.base_metric import BaseMetric, BaseStats
+from manten.utils.utils_decorators import with_shallow_copy, with_state_dict
 from manten.utils.utils_pytree import with_tree_map
 
 
@@ -24,7 +25,8 @@ class TrajectoryStats(BaseStats):
         metrics = self.metrics()
         return {key: metrics[key] for key in ["mean_x", "mean_y", "mean_z"]}
 
-
+@with_state_dict("pred_stats")
+@with_shallow_copy("pred_stats")
 class TrajectoryMetric(BaseMetric):
     def __init__(self):
         super().__init__()
@@ -37,11 +39,6 @@ class TrajectoryMetric(BaseMetric):
     def reset(self):
         super().reset()
         self.pred_stats.reset()
-
-    def copy(self):
-        new_metric = super().copy()
-        new_metric.pred_stats = self.pred_stats.copy()
-        return new_metric
 
     def loss(self):
         raise ValueError("TrajectoryMetric does not support loss()")

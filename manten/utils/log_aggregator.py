@@ -2,9 +2,10 @@ from enum import Enum
 
 import einops
 import numpy as np
+from accelerate.utils import gather_object
 
 from manten.agents.metrics.base_metric import BaseMetric
-from manten.utils.utils_enum import with_name_resolution
+from manten.utils.utils_decorators import with_name_resolution
 
 
 def argmedian(x):
@@ -68,14 +69,17 @@ class LogAggregator:
     def __init__(self, reductions: list[Reduction] | None = None):
         if reductions is None:
             reductions = [Reduction.MEAN, Reduction.MIN, Reduction.MAX]
-        self.list_of_metrics: list[BaseMetric] = []
-        self.list_of_dicts = []
         self.reductions: list[Reduction] = [Reduction.resolve(r) for r in reductions]
         self.prefix = ""
+        
+        self.list_of_metrics: list[BaseMetric] = []
+        self.list_of_dicts = []
+        self.did_all_gather = False
 
     def reset(self):
         self.list_of_metrics = []
         self.list_of_dicts = []
+        self.did_all_gather = False
 
     def log(self, metric: BaseMetric, copy=True):
         if copy:
@@ -108,6 +112,23 @@ class LogAggregator:
         self.log(logs, copy=False)
         return self.collate(*args, **kwargs)
 
+    def all_gather(self):
+        if self.did_all_gather:
+            raise ValueError("all_gather can only be called once")
+        if not self.list_of_metrics:
+            return
+        metric_proto = self.list_of_metrics[0]
+        l_of_states = [metric.state_dict() for metric in self.list_of_metrics]
+
+        gathered_states = gather_object(l_of_states)
+
+        l_of_metrics = []
+        for state in gathered_states:
+            metric = metric_proto.copy()
+            metric.load_state_dict(state)
+            l_of_metrics.append(metric)
+        self.list_of_metrics = l_of_metrics
+    
     def create_vis_logs(self, sort_key):
         valid_reductions = [r for r in self.reductions if r.supports_index()]
 
