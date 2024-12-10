@@ -15,6 +15,5 @@ testing:
   checkpoint: null
   agent_override: {}
 
-listener:
-  address: [localhost, 6000]
-  authkey: manten_agent_server_secret
+host: "localhost"
+port: 12567

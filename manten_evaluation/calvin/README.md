@@ -1,6 +1,6 @@
 - install calvin in a new, separate environment
 - in the original (manten) environment: run `manten.scripts.agent_proxy`
-- use `manten_calvin_agent_proxy_client.py` as a `CustomAgent` to evaluate calvin using their instructions in the new environment
+- edit the evaluate_policy.taml as necessary and run evaluate_policy.py
 
 notes:
 

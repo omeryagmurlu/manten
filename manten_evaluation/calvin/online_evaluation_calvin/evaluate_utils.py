@@ -1,5 +1,6 @@
 # ruff: noqa
 
+import re
 from typing import Dict, Any
 import os
 from pathlib import Path
@@ -11,13 +12,13 @@ import numpy as np
 from numpy import pi
 import torch
 import torch.nn.functional as F
-import utils.pytorch3d_transforms as pytorch3d_transforms
 import pybullet
 import hydra
 
 import calvin_env
 from calvin_env.envs.play_table_env import PlayTableSimEnv
-from utils.utils_with_calvin import (
+from manten.utils.dda_pytorch3d_transforms import matrix_to_euler_angles, quaternion_to_matrix
+from manten.utils.dda_utils_with_calvin import (
     deproject,
     get_gripper_camera_view_matrix,
     convert_rotation,
@@ -124,8 +125,8 @@ def prepare_proprio_states(obs: Dict[str, Dict[str, Any]], env: PlayTableSimEnv)
 def convert_quaternion_to_euler(quat):
     """Convert Euler angles to Quarternion"""
     quat = torch.as_tensor(quat)
-    mat = pytorch3d_transforms.quaternion_to_matrix(quat)
-    rot = pytorch3d_transforms.matrix_to_euler_angles(mat, "XYZ")
+    mat = quaternion_to_matrix(quat)
+    rot = matrix_to_euler_angles(mat, "XYZ")
     rot = rot.data.cpu().numpy()
 
     return rot

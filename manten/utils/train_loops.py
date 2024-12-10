@@ -259,7 +259,7 @@ class TrainLoops:
 
     def evaluation_step(self, batch):
         with torch.inference_mode():
-            trajectory, metric = self.agent("eval", batch, compare_gt=True)
+            metric, trajectory = self.agent("eval", batch, compare_gt=True)
         return metric, trajectory
 
     def resume_from_save(self, from_str):

@@ -190,7 +190,7 @@ class ThreeDDAAgent(BaseAgent):
             traj_metric = TrajectoryStats()
             traj_metric.feed(stats=(pred_pos, pred_quat, pred_openness))
 
-        return (pred_complete_traj, traj_metric)
+        return (traj_metric, pred_complete_traj)
 
     def conditional_diffusion_loss(self, conditions, trajectory):
         x_0 = trajectory

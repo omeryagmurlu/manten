@@ -1,0 +1,30 @@
+defaults:
+  - _self_
+  - optional local: local
+
+base_log_dir: ???
+calvin_model_path: ???
+calvin_dataset_path: ???
+
+num_sequences: 3
+seed: 142
+save_video: 0
+
+# gripper_loc_bounds: null
+# # tasks: ['D']
+# tasks: null
+# gripper_loc_bounds_buffer: 0.04
+
+calvin_gripper_loc_bounds: null
+
+calvin_agent_proxy_client:
+  agent_proxy_cfg: null # use defaults
+  te_device: "cpu"
+  interpolation_length: 2
+  action_dim: 7
+  num_history: 1
+  # input_mode: "2d"
+  input_mode: null
+  relative_action: True
+  text_encoder: "clip"
+  text_max_length: 16

@@ -20,7 +20,8 @@ from tqdm import tqdm
 from manten_evaluation.calvin.online_evaluation_calvin.common_utils import (
     get_gripper_loc_bounds,
 )
-from manten_evaluation.calvin.online_evaluation_calvin.evaluate_model import create_model
+from manten.utils.utils_root import root
+from manten_evaluation.calvin.manten_calvin_agent_proxy_client import create_model
 from manten_evaluation.calvin.online_evaluation_calvin.evaluate_utils import (
     collect_results,
     count_success,
@@ -38,48 +39,7 @@ from manten_evaluation.calvin.online_evaluation_calvin.multistep_sequences impor
 logger = logging.getLogger(__name__)
 
 EP_LEN = 60
-NUM_SEQUENCES = 250
 EXECUTE_LEN = 20
-
-
-class Arguments(tap.Tap):
-    # Online environment
-    calvin_dataset_path: Path = "/home/tsungwek/repos/calvin/dataset/task_ABC_D"
-    calvin_model_path: Path = "/home/tsungwek/repos/calvin/calvin_models"
-    calvin_demo_tasks: list[str] | None = None
-    device: str = "cuda"
-    text_encoder: str = "clip"
-    text_max_length: int = 16
-    save_video: int = 0
-
-    # Offline data loader
-    seed: int = 0
-    tasks: tuple[str, ...]  # indicates the environment
-    checkpoint: Path
-    gripper_loc_bounds: str | None = None
-    gripper_loc_bounds_buffer: float = 0.04
-    calvin_gripper_loc_bounds: str | None = None
-    relative_action: int = 0
-
-    # Logging to base_log_dir/exp_log_dir/run_log_dir
-    base_log_dir: Path = Path(__file__).parent / "eval_logs" / "calvin"
-
-    # Model
-    action_dim: int = 7  # dummy, as DiffuserActor assumes action_dim is 7
-    image_size: str = "256,256"  # decides the FPN architecture
-    backbone: str = "clip"  # one of "resnet", "clip"
-    embedding_dim: int = 120
-    num_vis_ins_attn_layers: int = 2
-    use_instruction: int = 0
-    rotation_parametrization: str = "quat"
-    quaternion_format: str = "wxyz"
-    diffusion_timesteps: int = 100
-    lang_enhanced: int = 0
-    fps_subsampling_factor: int = 3
-    num_history: int = 0
-    interpolation_length: int = 2  # the number of steps to reach keypose
-
-    input_mode: str = "3d"
 
 
 def make_env(dataset_path, show_gui=True, split="validation", scene=None):
@@ -93,7 +53,13 @@ def make_env(dataset_path, show_gui=True, split="validation", scene=None):
 
 
 def evaluate_policy(
-    model, env, conf_dir, eval_log_dir=None, save_video=False, sequence_indices=[]
+    model,
+    env,
+    conf_dir,
+    eval_log_dir=None,
+    save_video=False,
+    sequence_indices=[],
+    num_sequences=1000,
 ):
     """
     Run this function to evaluate a model on the CALVIN challenge.
@@ -116,7 +82,7 @@ def evaluate_policy(
 
     eval_log_dir = get_log_dir(eval_log_dir)
 
-    eval_sequences = get_sequences(NUM_SEQUENCES)
+    eval_sequences = get_sequences(num_sequences)
 
     results, tested_sequence_indices = collect_results(eval_log_dir)
 
@@ -242,7 +208,7 @@ def rollout(env, model, task_oracle, subtask, lang_annotation):
     for step in pbar:
         obs = prepare_visual_states(obs, env)
         obs = prepare_proprio_states(obs, env)
-        lang_embeddings = model.encode_instruction(lang_annotation, model.args.device)
+        lang_embeddings = model.encode_instruction(lang_annotation)
         with torch.cuda.amp.autocast():
             trajectory = model.step(obs, lang_embeddings)
         for act_ind in range(min(trajectory.shape[1], EXECUTE_LEN)):
@@ -271,8 +237,8 @@ def rollout(env, model, task_oracle, subtask, lang_annotation):
     return False, video
 
 
-def get_calvin_gripper_loc_bounds(args):
-    with open(args.calvin_gripper_loc_bounds) as stream:
+def get_calvin_gripper_loc_bounds(file_path):
+    with open(file_path) as stream:
         bounds = yaml.safe_load(stream)
         min_bound = bounds["act_min_bound"][:3]
         max_bound = bounds["act_max_bound"][:3]
@@ -281,45 +247,63 @@ def get_calvin_gripper_loc_bounds(args):
     return gripper_loc_bounds
 
 
-def main(args):
+def main(cfg):
     # These location bounds are extracted from language-annotated episodes
-    if args.gripper_loc_bounds is None:
-        args.gripper_loc_bounds = np.array([[-2, -2, -2], [2, 2, 2]]) * 1.0
-    else:
-        args.gripper_loc_bounds = get_gripper_loc_bounds(
-            args.gripper_loc_bounds,
-            task=args.tasks[0] if len(args.tasks) == 1 else None,
-            buffer=args.gripper_loc_bounds_buffer,
-        )
+    # if cfg.gripper_loc_bounds is None:
+    #     gripper_loc_bounds = np.array([[-2, -2, -2], [2, 2, 2]]) * 1.0
+    # else:
+    #     gripper_loc_bounds = get_gripper_loc_bounds(
+    #         cfg.gripper_loc_bounds,
+    #         task=cfg.tasks[0] if len(cfg.tasks) == 1 else None,
+    #         buffer=cfg.gripper_loc_bounds_buffer,
+    #     )
 
     # These location bounds are extracted from every episode in play trajectory
-    if args.calvin_gripper_loc_bounds is not None:
-        args.calvin_gripper_loc_bounds = get_calvin_gripper_loc_bounds(args)
+    if cfg.calvin_gripper_loc_bounds is not None:
+        calvin_gripper_loc_bounds = get_calvin_gripper_loc_bounds(
+            cfg.calvin_gripper_loc_bounds
+        )
+    else:
+        calvin_gripper_loc_bounds = None
 
     # set random seeds
-    random.seed(args.seed)
-    np.random.seed(args.seed)
-    torch.manual_seed(args.seed)
-    torch.cuda.manual_seed_all(args.seed)
+    random.seed(cfg.seed)
+    np.random.seed(cfg.seed)
+    torch.manual_seed(cfg.seed)
+    torch.cuda.manual_seed_all(cfg.seed)
 
     # evaluate a custom model
-    model = create_model(args)
+    model = create_model(
+        **cfg.calvin_agent_proxy_client, calvin_gripper_loc_bounds=calvin_gripper_loc_bounds
+    )
 
-    sequence_indices = [
-        i for i in range(args.local_rank, NUM_SEQUENCES, int(os.environ["WORLD_SIZE"]))
-    ]
+    if os.environ.get("LOCAL_RANK") is not None and os.environ.get("WORLD_SIZE") is not None:
+        sequence_indices = [
+            i
+            for i in range(
+                int(os.environ["LOCAL_RANK"]),
+                cfg.num_sequences,
+                int(os.environ["WORLD_SIZE"]),
+            )
+        ]
+    else:
+        logger.warning(
+            "LOCAL_RANK or WORLD_SIZE not found in environment variables, using single CPU"
+        )
+        sequence_indices = list(range(cfg.num_sequences))  # disable multi-cpu for now
 
-    env = make_env(args.calvin_dataset_path, show_gui=False)
+    env = make_env(cfg.calvin_dataset_path, show_gui=False)
     evaluate_policy(
         model,
         env,
-        conf_dir=Path(args.calvin_model_path) / "conf",
-        eval_log_dir=args.base_log_dir,
+        conf_dir=Path(cfg.calvin_model_path) / "conf",
+        eval_log_dir=cfg.base_log_dir,
         sequence_indices=sequence_indices,
-        save_video=args.save_video,
+        save_video=cfg.save_video,
+        num_sequences=cfg.num_sequences,
     )
 
-    results, sequence_inds = collect_results(args.base_log_dir)
+    results, sequence_inds = collect_results(cfg.base_log_dir)
     str_results = (
         " ".join(
             [f"{i + 1}/5 : {v * 100:.1f}% |" for i, v in enumerate(count_success(results))]
@@ -333,8 +317,17 @@ def main(args):
     gc.collect()
 
 
+@hydra.main(
+    version_base=None,
+    config_path=str(root / "manten_evaluation" / "calvin" / "configs"),
+    config_name="evaluate_policy",
+)
+def run(cfg):
+    main(cfg)
+
+
 if __name__ == "__main__":
-    args = Arguments().parse_args()
+    # args = Arguments().parse_args()
     # args.local_rank = int(os.environ["LOCAL_RANK"])
 
     # # DDP initialization
@@ -344,4 +337,4 @@ if __name__ == "__main__":
     # torch.backends.cudnn.benchmark = True
     # torch.backends.cudnn.deterministic = True
 
-    main(args)
+    run()
