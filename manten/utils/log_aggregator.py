@@ -71,7 +71,7 @@ class LogAggregator:
             reductions = [Reduction.MEAN, Reduction.MIN, Reduction.MAX]
         self.reductions: list[Reduction] = [Reduction.resolve(r) for r in reductions]
         self.prefix = ""
-        
+
         self.list_of_metrics: list[BaseMetric] = []
         self.list_of_dicts = []
         self.did_all_gather = False
@@ -128,7 +128,7 @@ class LogAggregator:
             metric.load_state_dict(state)
             l_of_metrics.append(metric)
         self.list_of_metrics = l_of_metrics
-    
+
     def create_vis_logs(self, sort_key):
         valid_reductions = [r for r in self.reductions if r.supports_index()]
 

@@ -5,6 +5,7 @@ from manten.utils.root import root
 
 logger = get_logger(__name__)
 
+
 def setup(cfg):
     import os
 
@@ -13,7 +14,7 @@ def setup(cfg):
     from accelerate.utils import DistributedDataParallelKwargs, set_seed
     from omegaconf import OmegaConf
 
-    from manten.utils.loops import Loops
+    from manten.utils.train_loops import TrainLoops
     from manten.utils.utils_file import mkdir
 
     set_seed(cfg.seed, deterministic=cfg.deterministic)
@@ -61,7 +62,7 @@ def setup(cfg):
         agent, optimizer, train_dataloader, test_dataloader, lr_scheduler
     )
 
-    loops = Loops(
+    loops = TrainLoops(
         cfg.training,
         accelerator=accelerator,
         agent=agent,
@@ -70,6 +71,7 @@ def setup(cfg):
         optimizer=optimizer,
         lr_scheduler=lr_scheduler,
         log_aggregator=hydra.utils.instantiate(cfg.training.log_aggregator),
+        whole_cfg=cfg,
     )
 
     loops.begin_sanity_check()

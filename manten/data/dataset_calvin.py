@@ -34,20 +34,19 @@ def traj_collate_fn(batch):
         "curr_gripper_history",
         "action",
         "instr",
+        "has3d",
     ]
     ret_dict = {
         key: torch.cat(
-            [item[key].float() if key != "trajectory_mask" else item[key] for item in batch]
+            # [item[key].float() if key != "trajectory_mask" else item[key] for item in batch]
+            [item[key] for item in batch]
         )
         for key in keys
     }
 
-    ret_dict["task"] = []
-    ret_dict["annotation_id"] = torch.cat(
-        [torch.tensor(item["annotation_id"]) for item in batch]
-    )
-    for item in batch:
-        ret_dict["task"] += item["task"]
+    # ret_dict["task"] = []
+    # for item in batch:
+    #     ret_dict["task"] += item["task"]
     return ret_dict
 
 
@@ -295,18 +294,18 @@ class CalvinDataset(Dataset):
                 dim=-1,
             )
 
-        # assert that all elements of episode[6] are the same
-        assert all(anno == episode[6][0] for anno in episode[6])
+        # assert all(anno == episode[6][0] for anno in episode[6])
 
         ret_dict = {
-            "task": [task for _ in frame_ids],
+            # "task": [task for _ in frame_ids],
             "rgbs": rgbs,  # e.g. tensor (n_frames, n_cam, 3+1, H, W)
             "pcds": pcds,  # e.g. tensor (n_frames, n_cam, 3, H, W)
             "action": action,  # e.g. tensor (n_frames, 8), target pose
             "instr": instr,  # a (n_frames, 53, 512) tensor
             "curr_gripper": gripper,
             "curr_gripper_history": gripper_history,
-            "annotation_id": [episode[6][0] for _ in frame_ids],
+            # "annotation_id": [episode[6][0] for _ in frame_ids],
+            "has3d": torch.ones(len(rgbs), dtype=torch.bool),
         }
         if self._return_low_lvl_trajectory:
             ret_dict.update(

@@ -2,6 +2,7 @@ from dataclasses import dataclass, field
 from typing import Protocol
 
 import torch
+from omegaconf import OmegaConf
 from tabulate import tabulate
 
 from manten.agents.base_agent import AgentMode
@@ -14,13 +15,13 @@ logger = get_logger(__name__)
 
 @dataclass
 @with_state_dict("epoch", "global_step", "best_mean_train_epoch_loss")
-class LoopsState:
+class TrainLoopsState:
     epoch: int = field(default=0)
     global_step: int = field(default=0)
     best_mean_train_epoch_loss: float = field(default=float("inf"))
 
 
-class LoopsConfig(Protocol):
+class TrainLoopsConfig(Protocol):
     num_epochs: int
     max_steps: int
     sanity_check: int
@@ -35,10 +36,10 @@ class LoopsConfig(Protocol):
     eval_train_ene_max_steps: int
 
 
-class Loops:
+class TrainLoops:
     def __init__(
         self,
-        cfg: LoopsConfig,
+        cfg: TrainLoopsConfig,
         *,
         accelerator,
         agent,
@@ -47,6 +48,7 @@ class Loops:
         optimizer,
         lr_scheduler,
         log_aggregator,
+        whole_cfg,
     ):
         self.cfg = cfg
         self.accelerator = accelerator
@@ -56,8 +58,9 @@ class Loops:
         self.optimizer = optimizer
         self.lr_scheduler = lr_scheduler
         self.log_aggregator = log_aggregator
+        self.whole_cfg = whole_cfg  # this is a hack to save the agent config
 
-        self.state = LoopsState()
+        self.state = TrainLoopsState()
         accelerator.register_for_checkpointing(self.state)
 
         self.num_processes = accelerator.num_processes
@@ -104,13 +107,13 @@ class Loops:
             progress := progbar(
                 self.train_dl,
                 desc=f"epoch {self.state.epoch}",
-                total=min(len(self.train_dl), self.cfg.max_steps)
+                total=min(len(self.train_dl), self.cfg.max_steps),
             )
         ):
             if step == self.cfg.max_steps:
                 progress.close()
                 break
-    
+
             metric, loss = self.train_step(batch)
 
             train_epoch_losses.append(loss := loss.detach().item())
@@ -125,7 +128,7 @@ class Loops:
             # accelerate already has @on_main_process deco on trackers, so this here
             # is mostly redundant, it only prevents agent.metrics() from being called
             # on non-main processes at all
-            if self.accelerator.is_main_process and self.every_n_universe_steps(
+            if self.accelerator.is_main_process and self.every_n_global_steps(
                 self.cfg.log_every_n_steps
             ):
                 upl = self.log_aggregator.log_collate(metric, "train/")
@@ -276,18 +279,27 @@ class Loops:
         self.accelerator.wait_for_everyone()
         checkpoint_path = f"{self.accelerator.project_dir}/checkpoint_{self.state.epoch}"
         self.accelerator.save_state(checkpoint_path)
+        self.save_agent_config(checkpoint_path)
         logger.info("checkpoint@epoch:%d saved to %s", self.state.epoch, checkpoint_path)
 
         if mean_epoch_loss < self.state.best_mean_train_epoch_loss:
             self.state.best_mean_train_epoch_loss = mean_epoch_loss
             best_checkpoint_path = f"{self.accelerator.project_dir}/best_checkpoint"
             self.accelerator.save_state(best_checkpoint_path)
+            self.save_agent_config(best_checkpoint_path)
             logger.info(
                 "best checkpoint@epoch:%d with loss %.4f saved to %s",
                 self.state.epoch,
                 self.state.best_mean_train_epoch_loss,
                 best_checkpoint_path,
             )
+
+    def save_agent_config(self, checkpoint_path):
+        OmegaConf.save(
+            config=self.whole_cfg.agent.agent,
+            f=checkpoint_path + "/agent_config.yaml",
+            resolve=True,
+        )
 
     def every_n_epochs(self, n):
         return bool(n) and (
@@ -298,11 +310,5 @@ class Loops:
     def every_n_global_steps(self, n):
         return bool(n) and (
             (self.state.global_step + 1) % n == 0
-            or (self.step + 1) == self.len_train_dl  # or end of epoch
-        )
-
-    def every_n_universe_steps(self, n):
-        return bool(n) and (
-            ((self.state.global_step + 1) * self.num_processes) % n < self.num_processes
             or (self.step + 1) == self.len_train_dl  # or end of epoch
         )

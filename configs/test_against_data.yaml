@@ -1,0 +1,16 @@
+defaults:
+  - _self_
+  - hydra: test
+
+  # following are global
+  - experiment_against_data: ???
+  - optional local: local
+  - debug: null
+
+seed: 142
+deterministic: False
+
+testing:
+  train_folder: ???
+  checkpoint: null
+  agent_override: {}

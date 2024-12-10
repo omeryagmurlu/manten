@@ -25,6 +25,7 @@ class TrajectoryStats(BaseStats):
         metrics = self.metrics()
         return {key: metrics[key] for key in ["mean_x", "mean_y", "mean_z"]}
 
+
 @with_state_dict("pred_stats")
 @with_shallow_copy("pred_stats")
 class TrajectoryMetric(BaseMetric):

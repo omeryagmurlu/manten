@@ -32,11 +32,10 @@ datamodule:
     shuffle: True
     num_workers: ${..._num_workers}
     pin_memory: True
-    drop_last: True
+    drop_last: False
   test_dataloader:
     <<: *_train_dataloader
     dataset:
       <<: *_train_dataloader_dataset
       root: ${...._validation_calvin_data}
       training: False
-    drop_last: False

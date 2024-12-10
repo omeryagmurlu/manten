@@ -16,7 +16,11 @@ class DebugUtils:
     def __init__(self, **kwargs):
         for key, value in kwargs.items():
             if hasattr(self, key) and callable(getattr(self, key)):
-                val = value if not OmegaConf.is_config(value) else OmegaConf.to_container(value, resolve=True)
+                val = (
+                    value
+                    if not OmegaConf.is_config(value)
+                    else OmegaConf.to_container(value, resolve=True)
+                )
                 getattr(self, key)(val)
 
     @staticmethod
