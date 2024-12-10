@@ -1,16 +1,9 @@
 from abc import ABC, abstractmethod
-from enum import Enum
 
 import torch
 from torch import nn
 
 from manten.agents.metrics.base_metric import BaseMetric
-
-
-class AgentMode(Enum):
-    TRAIN = "train"
-    VALIDATE = "validate"
-    EVAL = "eval"
 
 
 class BaseAgent(nn.Module, ABC):
@@ -25,18 +18,18 @@ class BaseAgent(nn.Module, ABC):
     def reset(self):
         self.metric.reset()
 
-    def forward(self, agent_mode: AgentMode, *args, **kwargs):
+    def forward(self, agent_mode: str, *args, **kwargs):
         """
         forward method
         DDP adds some hooks to the forward method, so route the calls through it
         """
         self.reset()
         match agent_mode:
-            case AgentMode.TRAIN:
+            case "train":
                 return self.train_step(*args, **kwargs)
-            case AgentMode.VALIDATE:
+            case "validate":
                 return self.validate_step(*args, **kwargs)
-            case AgentMode.EVAL:
+            case "eval":
                 return self.eval_step(*args, **kwargs)
             case _:
                 raise NotImplementedError

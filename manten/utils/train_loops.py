@@ -2,12 +2,11 @@ from dataclasses import dataclass, field
 from typing import Protocol
 
 import torch
-from omegaconf import OmegaConf
 from tabulate import tabulate
 
-from manten.agents.base_agent import AgentMode
 from manten.utils.logging import get_logger
 from manten.utils.progbar import progbar
+from manten.utils.utils_config import save_agent_config
 from manten.utils.utils_decorators import with_state_dict
 
 logger = get_logger(__name__)
@@ -240,7 +239,7 @@ class TrainLoops:
 
     def train_step(self, batch):
         with self.accelerator.accumulate(self.agent):
-            metric = self.agent(AgentMode.TRAIN, batch)
+            metric = self.agent("train", batch)
             loss = metric.loss()
 
             self.accelerator.backward(loss)
@@ -255,12 +254,12 @@ class TrainLoops:
 
     def validation_step(self, batch):
         with torch.inference_mode():
-            metric = self.agent(AgentMode.VALIDATE, batch)
+            metric = self.agent("validate", batch)
         return metric
 
     def evaluation_step(self, batch):
         with torch.inference_mode():
-            trajectory, metric = self.agent(AgentMode.EVAL, batch, compare_gt=True)
+            trajectory, metric = self.agent("eval", batch, compare_gt=True)
         return metric, trajectory
 
     def resume_from_save(self, from_str):
@@ -295,11 +294,7 @@ class TrainLoops:
             )
 
     def save_agent_config(self, checkpoint_path):
-        OmegaConf.save(
-            config=self.whole_cfg.agent.agent,
-            f=checkpoint_path + "/agent_config.yaml",
-            resolve=True,
-        )
+        save_agent_config(checkpoint_path, self.whole_cfg.agent.agent)
 
     def every_n_epochs(self, n):
         return bool(n) and (

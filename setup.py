@@ -7,5 +7,5 @@ setup(
     author="",
     author_email="",
     url="https://github.com/omeryagmurlu/manten",
-    packages=find_packages(),
+    packages=find_packages("manten") + find_packages("manten_evaluation"),
 )

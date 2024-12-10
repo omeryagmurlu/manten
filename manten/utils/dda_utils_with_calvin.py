@@ -4,7 +4,7 @@ import numpy as np
 import torch
 from scipy.signal import argrelextrema
 
-from manten.utils import pytorch3d_transforms
+from manten.utils import dda_pytorch3d_transforms
 
 
 def get_eef_velocity_from_robot(robot):
@@ -240,8 +240,8 @@ def deproject(cam, depth_img, homogeneous=False, sanity_check=False):
 def convert_rotation(rot):
     """Convert Euler angles to Quarternion"""
     rot = torch.as_tensor(rot)
-    mat = pytorch3d_transforms.euler_angles_to_matrix(rot, "XYZ")
-    quat = pytorch3d_transforms.matrix_to_quaternion(mat)
+    mat = dda_pytorch3d_transforms.euler_angles_to_matrix(rot, "XYZ")
+    quat = dda_pytorch3d_transforms.matrix_to_quaternion(mat)
     quat = quat.numpy()
 
     return quat

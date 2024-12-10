@@ -1,7 +1,7 @@
 import hydra
 
 from manten.utils.logging import get_logger
-from manten.utils.root import root
+from manten.utils.utils_root import root
 
 logger = get_logger(__name__)
 

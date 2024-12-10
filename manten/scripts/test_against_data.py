@@ -2,15 +2,14 @@ from typing import Protocol
 
 import hydra
 import torch
-from omegaconf import OmegaConf
 from optree import tree_map
 from tabulate import tabulate
 
-from manten.agents.base_agent import AgentMode
 from manten.utils.log_aggregator import LogAggregator
 from manten.utils.logging import get_logger
 from manten.utils.progbar import progbar
-from manten.utils.root import root
+from manten.utils.utils_config import load_agent
+from manten.utils.utils_root import root
 
 logger = get_logger(__name__)
 
@@ -27,7 +26,7 @@ def every_n_steps(n, step):
 
 def evaluation_step(agent, batch):
     with torch.inference_mode():
-        trajectory, metric = agent(AgentMode.EVAL, batch, compare_gt=True)
+        trajectory, metric = agent("eval", batch, compare_gt=True)
     return metric, trajectory
 
 
@@ -60,29 +59,6 @@ def test_agent_with_data(
             logs = log_aggregator.collate("eval_against_data/", reset=False)
             print(tabulate(logs.items()))
     log_aggregator.reset()
-
-
-def load_agent(
-    train_folder: str,
-    checkpoint: str | None,
-    agent_override: dict | None,
-    no_checkpoint_mode="last",
-):
-    logger.info("loading agent")
-    # load agent
-    if checkpoint is None:
-        if no_checkpoint_mode == "last":
-            checkpoint = "last_checkpoint"
-        elif no_checkpoint_mode == "best":
-            checkpoint = "best_checkpoint"
-        else:
-            raise ValueError(f"no_checkpoint_mode {no_checkpoint_mode} not recognized")
-
-    agent_cfg = OmegaConf.load(f"{train_folder}/{checkpoint}/agent_config.yaml")
-    if agent_override is not None:
-        agent_cfg = OmegaConf.merge(agent_cfg, agent_override)
-    agent = hydra.utils.instantiate(agent_cfg)
-    return agent
 
 
 def test(cfg):

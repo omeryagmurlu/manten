@@ -1,0 +1,20 @@
+defaults:
+  - _self_
+  - hydra: test
+
+  # following are global
+  - optional local: local
+  - debug: null
+
+seed: 142
+deterministic: False
+device: cuda
+
+testing:
+  train_folder: ???
+  checkpoint: null
+  agent_override: {}
+
+listener:
+  address: [localhost, 6000]
+  authkey: manten_agent_server_secret

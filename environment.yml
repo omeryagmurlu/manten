@@ -28,8 +28,6 @@ dependencies:
       - blosc
       - einops
       - optree
-      - git+https://github.com/openai/CLIP.git
-      - flash-attn
 
       # - pre-commit
       # - ipykernel
@@ -37,3 +35,7 @@ dependencies:
       - matplotlib
       - plotly
       - tabulate
+
+      # tdda
+      - git+https://github.com/openai/CLIP.git
+      - flash-attn
