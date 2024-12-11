@@ -14,7 +14,7 @@ seed: ???
 deterministic: False
 
 _detailed_metrics_every_n_epochs: 10
-_save_every_n_epochs: 10
+_save_every_n_epochs: 20
 training:
   num_epochs: 80
   max_steps: .inf
@@ -24,9 +24,9 @@ training:
   validate_every_n_epochs: ${_detailed_metrics_every_n_epochs}
   eval_train_every_n_epochs: ${_detailed_metrics_every_n_epochs}
   eval_test_every_n_epochs: ${_detailed_metrics_every_n_epochs}
-  validate_ene_max_steps: 1000
-  eval_train_ene_max_steps: 1000
-  eval_test_ene_max_steps: 1000
+  validate_ene_max_steps: .inf
+  eval_train_ene_max_steps: .inf
+  eval_test_ene_max_steps: .inf
   resume_from_save: null
   log_aggregator:
     _target_: manten.utils.log_aggregator.LogAggregator
