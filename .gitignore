@@ -164,3 +164,5 @@ cython_debug/
 node_modules
 /manten_evaluation/*/outputs
 /manten_evaluation/*/configs/local/local.yaml
+
+*.mp4

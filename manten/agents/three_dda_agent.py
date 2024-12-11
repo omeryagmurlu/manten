@@ -73,8 +73,12 @@ class RotationParametrization:
 
 
 class PositionNormalization:
-    def __init__(self, gripper_loc_bounds=None):
-        self.gripper_loc_bounds = gripper_loc_bounds
+    def __init__(self, *, dataset_stats, first_n):
+        self.gripper_loc_bounds = torch.stack(
+            [-1 * torch.ones(first_n), 1 * torch.ones(first_n)], dim=0
+        )
+        t_ds_s = torch.tensor(dataset_stats)
+        self.gripper_loc_bounds[:, :first_n] = t_ds_s[:, :first_n]
 
     def normalize_pos(self, pos):
         if self.gripper_loc_bounds is None:

@@ -44,6 +44,13 @@ def setup(cfg):
         mkdir(output_dir + "/accelerate")
         mkdir(output_dir + "/tracker")
 
+    datamodule = hydra.utils.instantiate(cfg.datamodule.datamodule)
+    train_dataloader = datamodule.create_train_dataloader()
+    test_dataloader = datamodule.create_test_dataloader()
+
+    dataset_stats = datamodule.get_dataset_statistics()
+
+    cfg.agent._dataset_stats = dataset_stats  # noqa: SLF001
     agent = hydra.utils.instantiate(cfg.agent.agent)
 
     optimizer_configurator = hydra.utils.instantiate(cfg.optimizer_configurator, agent=agent)
@@ -53,10 +60,6 @@ def setup(cfg):
 
     # TODO: accelerate doesn't scale lr: https://huggingface.co/docs/accelerate/en/concept_guides/performance#learning-rates
     lr_scheduler = hydra.utils.instantiate(cfg.lr_scheduler, optimizer)
-
-    datamodule = hydra.utils.instantiate(cfg.datamodule.datamodule)
-    train_dataloader = datamodule.create_train_dataloader()
-    test_dataloader = datamodule.create_test_dataloader()
 
     (agent, optimizer, train_dataloader, test_dataloader, lr_scheduler) = accelerator.prepare(
         agent, optimizer, train_dataloader, test_dataloader, lr_scheduler

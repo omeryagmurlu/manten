@@ -3,6 +3,7 @@ _embedding_dim: 192
 _num_history: 1 # kinda like 0, that part of the code is a mess
 _relative_action: ${_relative_action}
 _rotation_parametrization: "6D"
+_dataset_stats: null # this is filled in train.py
 agent:
   _target_: manten.agents.three_dda_agent.ThreeDDAAgent
   position_noise_scheduler:
@@ -21,7 +22,8 @@ agent:
     quaternion_format: wxyz
   position_normalization:
     _target_: manten.agents.three_dda_agent.PositionNormalization
-    gripper_loc_bounds: null # TODO get bounds somehow, this'll be partial and come from dataset
+    first_n: 3
+    dataset_stats: ${..._dataset_stats}
   encoder:
     _target_: manten.networks.three_dda.encoder.Encoder
     backbone: "clip"

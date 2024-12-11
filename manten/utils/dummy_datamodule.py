@@ -4,8 +4,7 @@ from typing import Protocol
 class UhaDataModuleProtocol(Protocol):
     def create_train_dataloader(self): ...
     def create_test_dataloader(self): ...
-    def get_dataset_statistics(self):
-        raise NotImplementedError
+    def get_dataset_statistics(self): ...
 
 
 class DummyDataModule(UhaDataModuleProtocol):
@@ -18,3 +17,8 @@ class DummyDataModule(UhaDataModuleProtocol):
 
     def create_test_dataloader(self):
         return self.test_dataloader
+
+    def get_dataset_statistics(self):
+        stats = self.train_dataloader.dataset.stats
+        # return {"min": stats[0].tolist(), "max": stats[1].tolist()}
+        return stats.tolist()

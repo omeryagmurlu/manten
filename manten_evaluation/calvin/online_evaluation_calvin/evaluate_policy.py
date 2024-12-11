@@ -118,9 +118,7 @@ def evaluate_policy(
 
             clip = []
 
-            for task_ind, (subtask, video) in enumerate(
-                zip(eval_sequence, videos, strict=False)
-            ):
+            for task_ind, (subtask, video) in enumerate(zip(eval_sequence, videos)):
                 for img_ind, img in enumerate(video):
                     # cv2.putText(
                     #     img,

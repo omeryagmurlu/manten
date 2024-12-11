@@ -6,9 +6,9 @@ base_log_dir: ???
 calvin_model_path: ???
 calvin_dataset_path: ???
 
-num_sequences: 3
+num_sequences: 20
 seed: 142
-save_video: 0
+save_video: 1
 
 # gripper_loc_bounds: null
 # # tasks: ['D']
@@ -20,7 +20,7 @@ calvin_gripper_loc_bounds: null
 calvin_agent_proxy_client:
   agent_proxy_cfg: null # use defaults
   te_device: "cpu"
-  interpolation_length: 2
+  interpolation_length: 20
   action_dim: 7
   num_history: 1
   # input_mode: "2d"
