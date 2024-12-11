@@ -1,3 +1,0 @@
-- position normalization
-- - joint
-- - ee

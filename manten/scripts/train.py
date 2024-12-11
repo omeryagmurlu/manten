@@ -17,6 +17,13 @@ def setup(cfg):
     from manten.utils.train_loops import TrainLoops
     from manten.utils.utils_file import mkdir
 
+    if cfg.training.resume_from_save is not None:
+        # hook here early (normally we load them in the loops) to load the cfg
+        agent_cfg = OmegaConf.load(cfg.training.resume_from_save + "/agent_config.yaml")
+        # for now only load the normalization stats to keep it simple, this is a hack
+        # HACK:  # noqa: FIX004
+        cfg.agent._dataset_stats = agent_cfg.position_normalization.dataset_stats  # noqa: SLF001
+
     set_seed(cfg.seed, deterministic=cfg.deterministic)
     if cfg.deterministic:
         # also need to handle this but nvm for now: https://docs.nvidia.com/cuda/cublas/index.html#results-reproducibility
@@ -48,9 +55,10 @@ def setup(cfg):
     train_dataloader = datamodule.create_train_dataloader()
     test_dataloader = datamodule.create_test_dataloader()
 
-    dataset_stats = datamodule.get_dataset_statistics()
+    if cfg.agent._dataset_stats is None:  # noqa: SLF001
+        dataset_stats = datamodule.get_dataset_statistics()
+        cfg.agent._dataset_stats = dataset_stats  # noqa: SLF001
 
-    cfg.agent._dataset_stats = dataset_stats  # noqa: SLF001
     agent = hydra.utils.instantiate(cfg.agent.agent)
 
     optimizer_configurator = hydra.utils.instantiate(cfg.optimizer_configurator, agent=agent)

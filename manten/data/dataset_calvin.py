@@ -144,21 +144,6 @@ class CalvinDataset(Dataset):
 
         logger.info(f"created dataset from {root} with {self._num_episodes}")
 
-        # if len(self._root) == 1:  # can cache stats
-        #     stats_cache_path = self._root[0] / "stats.tl"
-        #     if stats_cache_path.exists():
-        #         logger.info(f"loading stats from {stats_cache_path} cache")
-        #         with stats_cache_path.open("rb") as file:
-        #             self._stats = torch.load(file)
-        #     else:
-        #         logger.info(f"computing stats, caching to {stats_cache_path}")
-        #         self._stats = self._compute_stats(self)
-        #         with stats_cache_path.open("wb") as file:
-        #             torch.save(self._stats, file)
-        # else:
-        logger.info("computing stats")
-        self.stats = self._compute_stats(self)
-
     def __getitem__(self, episode_id):
         """
         the episode item: [
@@ -355,15 +340,15 @@ class CalvinDataset(Dataset):
         # (from [-1, 1] to [0, 1]) to feed RGB to pre-trained backbone
         return rgb / 2 + 0.5
 
-    @staticmethod
-    def _compute_stats(ds):
-        ds_len = len(ds)
-        stat = torch.zeros(2, ds_len, ds[0]["trajectory"].shape[-1])
-        for i in progbar(range(ds_len), desc="computing dataset stats"):
-            tj = ds[i]["trajectory"]
+    def compute_statistics(self):
+        ds_len = len(self)
+        logger.info("computing dataset stats (len:%d)", ds_len)
+        stat = torch.zeros(2, ds_len, self[0]["trajectory"].shape[-1])
+        for i in progbar(range(ds_len), desc="computing dataset stats", leave=False):
+            tj = self[i]["trajectory"]
             stat[0, i] = tj.amin(dim=[0, 1])
             stat[1, i] = tj.amax(dim=[0, 1])
-        stats = torch.zeros(2, ds[0]["trajectory"].shape[-1])
+        stats = torch.zeros(2, self[0]["trajectory"].shape[-1])
         stats[0] = stat[0].amin(dim=0)
         stats[1] = stat[1].amax(dim=0)
         return stats

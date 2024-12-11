@@ -19,6 +19,6 @@ class DummyDataModule(UhaDataModuleProtocol):
         return self.test_dataloader
 
     def get_dataset_statistics(self):
-        stats = self.train_dataloader.dataset.stats
+        stats = self.train_dataloader.dataset.compute_statistics()
         # return {"min": stats[0].tolist(), "max": stats[1].tolist()}
         return stats.tolist()

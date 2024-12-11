@@ -128,7 +128,7 @@ class TrainLoops:
             # is mostly redundant, it only prevents agent.metrics() from being called
             # on non-main processes at all
             if self.accelerator.is_main_process and self.every_n_global_steps(
-                self.cfg.log_every_n_steps
+                self.cfg.log_every_n_steps, curr_train_step=step
             ):
                 upl = self.log_aggregator.log_collate(metric, "train/")
                 upl.update(overview_logs)
@@ -302,8 +302,8 @@ class TrainLoops:
             or (self.state.epoch + 1) == self.cfg.num_epochs  # or last epoch
         )
 
-    def every_n_global_steps(self, n):
+    def every_n_global_steps(self, n, *, curr_train_step=0):
         return bool(n) and (
             (self.state.global_step + 1) % n == 0
-            or (self.step + 1) == self.len_train_dl  # or end of epoch
+            or (curr_train_step + 1) == self.len_train_dl  # or end of epoch
         )
