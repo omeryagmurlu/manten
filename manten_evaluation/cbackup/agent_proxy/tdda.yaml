@@ -1,0 +1,11 @@
+_target_: manten_evaluation.calvin.adapters.tdda.TDDACalvinAdapter
+te_device: "cpu"
+interpolation_length: 20
+action_dim: 7
+num_history: 1
+# input_mode: "2d"
+# input_mode: null
+relative_action: True
+text_encoder: "clip"
+text_max_length: 16
+calvin_gripper_loc_bounds: null

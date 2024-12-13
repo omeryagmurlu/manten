@@ -2,25 +2,8 @@ import numpy as np
 import torch
 import transformers
 
-from calvin.calvin_models.calvin_agent.models.calvin_base_model import CalvinBaseModel
 from manten.utils.dda_utils_with_calvin import relative_to_absolute
-from manten_evaluation.agent_proxy_client import AgentProxyClient
 from manten_evaluation.calvin.online_evaluation_calvin.evaluate_utils import convert_action
-
-
-def create_model(**kwargs):
-    return MantenCalvinAgentProxyClient(
-        agent_proxy_cfg=kwargs["agent_proxy_cfg"],
-        te_device=kwargs["te_device"],
-        interpolation_length=kwargs["interpolation_length"],
-        action_dim=kwargs["action_dim"],
-        num_history=kwargs["num_history"],
-        input_mode=kwargs["input_mode"],
-        relative_action=kwargs["relative_action"],
-        calvin_gripper_loc_bounds=kwargs["calvin_gripper_loc_bounds"],
-        text_encoder=kwargs["text_encoder"],
-        text_max_length=kwargs["text_max_length"],
-    )
 
 
 def get_text_encoder(text_encoder, text_max_length):
@@ -56,51 +39,33 @@ def get_text_encoder(text_encoder, text_max_length):
     return tokenizer, model
 
 
-class MantenCalvinAgentProxyClient(CalvinBaseModel):
+class TDDACalvinAdapter:
     def __init__(
         self,
-        *,
-        agent_proxy_cfg,  # noqa: ARG002
-        te_device,
         interpolation_length,
         action_dim,
         num_history,
-        input_mode,
+        te_device,
         relative_action,
         calvin_gripper_loc_bounds,
         text_encoder,
         text_max_length,
     ):
-        self.te_device = te_device
         self.interpolation_length = interpolation_length
         self.action_dim = action_dim
         self.num_history = num_history
-        self.input_mode = input_mode
+
+        self.te_device = te_device
         self.relative_action = relative_action
         self.calvin_gripper_loc_bounds = calvin_gripper_loc_bounds
         self.text_tokenizer, self.text_model = get_text_encoder(text_encoder, text_max_length)
 
-        # if agent_proxy_cfg is not None:
-        #     self._agent = AgentProxyClient(
-        #         address=tuple(agent_proxy_cfg.address),
-        #         authkey=bytes(str(agent_proxy_cfg.authkey), "utf-8"),
-        #     )
-        # else:
-        self._agent = AgentProxyClient()
-        self.reset()
-
     def reset(self):
-        """
-        This is called
-        """
-        self._agent.reset()
         self.text_model.eval()
         self.text_model = self.text_model.to(self.te_device)
 
     def encode_instruction(self, instruction, device=None):
         """Encode string instruction to latent embeddings.
-
-
 
         Args:
             instruction: a string of instruction
@@ -121,19 +86,7 @@ class MantenCalvinAgentProxyClient(CalvinBaseModel):
 
         return pred
 
-    def step(self, obs, instruction):
-        """
-        Args:
-            obs: a dictionary of observations
-                - rgb_obs: a dictionary of RGB images
-                - depth_obs: a dictionary of depth images
-                - robot_obs: a dictionary of proprioceptive states
-            lang_annotation: a string indicates the instruction of the task
-
-        Returns:
-            action: predicted action
-        """
-
+    def pre_step(self, obs, instruction):
         # Organize inputs
         trajectory_mask = torch.full([1, self.interpolation_length - 1], fill_value=False)
         fake_trajectory = torch.full([1, self.interpolation_length - 1, self.action_dim], 0)
@@ -173,7 +126,11 @@ class MantenCalvinAgentProxyClient(CalvinBaseModel):
             # has_3d=has_3d,
         }
 
-        _metric, trajectory = self._agent("eval", batch)
+        return ("eval", batch), (gripper,)
+
+    def post_step(self, agent_output, pre_step_output):
+        _metric, trajectory = agent_output
+        (gripper,) = pre_step_output
 
         # Convert quaternion to Euler angles
         trajectory = convert_action(trajectory)
@@ -191,5 +148,3 @@ class MantenCalvinAgentProxyClient(CalvinBaseModel):
                 a_min=self.calvin_gripper_loc_bounds[0].reshape(1, 1, 3),
                 a_max=self.calvin_gripper_loc_bounds[1].reshape(1, 1, 3),
             )
-
-        return trajectory

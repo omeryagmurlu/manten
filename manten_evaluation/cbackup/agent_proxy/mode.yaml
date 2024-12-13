@@ -1,0 +1,40 @@
+_target_: manten_evaluation.calvin.agent_proxies.mode.MoDEAgentProxy
+use_text_not_embedding: True
+# calvin_agent_adapter:
+#   _target_: manten_evaluation.calvin.calvin_agent_adapter.CalvinDefaultEnvAgentAdapter
+#   dataset_dir: ${dataset_path}/training
+#   observation_space_keys:
+#     rgb_obs: ['rgb_static', 'rgb_gripper']
+#     depth_obs: []
+#     state_obs: ['robot_obs']
+#     actions: ['rel_actions']
+#     language: ['language']
+#   proprio_state:
+#     n_state_obs: 8
+#     keep_indices: [[0, 7], [14,15]]
+#     robot_orientation_idx: [3, 6]
+#     normalize: True
+#     normalize_robot_orientation: True
+#   validation_base_transforms:
+#     rgb_static:
+#       - _target_: torchvision.transforms.Resize
+#         size: 224
+#         antialias: True
+#       - _target_: calvin_agent.utils.transforms.ScaleImageTensor
+#       - _target_: torchvision.transforms.Normalize
+#         mean: [ 0.48145466, 0.4578275, 0.40821073 ]
+#         std: [ 0.26862954, 0.26130258, 0.27577711 ]
+#     rgb_gripper:
+#       - _target_: torchvision.transforms.Resize
+#         size: 224
+#         antialias: True
+#       - _target_: calvin_agent.utils.transforms.ScaleImageTensor
+#       - _target_: torchvision.transforms.Normalize
+#         mean: [ 0.48145466, 0.4578275, 0.40821073 ]
+#         std: [ 0.26862954, 0.26130258, 0.27577711 ]
+#     # I wasn't able to disable nested recursive instantiation, so here's a hack
+#     # we swap them by default so this isn't a problem
+#     robot_obs:
+#       - TARGET_BUT_HACK: calvin_agent.utils.transforms.NormalizeVector
+#     scene_obs:
+#       - TARGET_BUT_HACK: calvin_agent.utils.transforms.NormalizeVector

@@ -2,29 +2,15 @@ defaults:
   - _self_
   - optional local: local
 
-base_log_dir: ???
-calvin_model_path: ???
-calvin_dataset_path: ???
+agent_proxy:
+  _target_: manten_evaluation.agent_proxy_client.AgentProxyClient
+  timeout: null
 
-num_sequences: 20
-seed: 142
-save_video: 1
+ep_len: 360
+num_sequences: 1000
+debug: False
+num_videos: 0
 
-# gripper_loc_bounds: null
-# # tasks: ['D']
-# tasks: null
-# gripper_loc_bounds_buffer: 0.04
-
-calvin_gripper_loc_bounds: null
-
-calvin_agent_proxy_client:
-  agent_proxy_cfg: null # use defaults
-  te_device: "cpu"
-  interpolation_length: 20
-  action_dim: 7
-  num_history: 1
-  # input_mode: "2d"
-  input_mode: null
-  relative_action: True
-  text_encoder: "clip"
-  text_max_length: 16
+eval_log_dir: ???
+dataset_path: ???
+calvin_models_dir: ???
