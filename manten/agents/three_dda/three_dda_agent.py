@@ -2,7 +2,7 @@ import einops
 import torch
 
 from manten.agents.base_agent import BaseAgent
-from manten.agents.metrics.trajectory_metric import TrajectoryMetric, TrajectoryStats
+from manten.metrics.trajectory_metric import TrajectoryMetric, TrajectoryStats
 from manten.utils.dda_utils import (
     compute_rotation_matrix_from_ortho6d,
     get_ortho6d_from_rotation_matrix,

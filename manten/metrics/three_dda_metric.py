@@ -1,8 +1,9 @@
 import torch.nn.functional as F
 
-from manten.agents.metrics.base_metric import BaseMetric
 from manten.utils.utils_decorators import with_shallow_copy
 from manten.utils.utils_pytree import with_tree_map
+
+from .base_metric import BaseMetric
 
 
 @with_shallow_copy("pos_weight", "ortho6d_weight", "open_weight")

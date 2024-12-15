@@ -8,6 +8,7 @@ from typing import Optional
 
 import torch
 
+from manten_evaluation.calvin.pcd_obs_utils import compute_pcd_as_part_of_obs
 from manten_evaluation.calvin.rollout_video import RolloutVideo
 
 sys.path.insert(0, Path(__file__).absolute().parents[2].as_posix())
@@ -56,8 +57,8 @@ def evaluate_policy(
     eval_log_dir=None,
     debug=False,
     num_sequences=1000,
-    ep_len=360,
     num_videos=0,
+    **kwargs,
 ):
     """
     Run this function to evaluate a model on the CALVIN challenge.
@@ -106,8 +107,8 @@ def evaluate_policy(
             eval_sequence=eval_sequence,
             val_annotations=val_annotations,
             debug=debug,
-            ep_len=ep_len,
             rollout_video=rollout_video if seq_idx < num_videos else None,
+            **kwargs,
         )
         results.append(result)
         if seq_idx < num_videos:
@@ -132,14 +133,12 @@ def evaluate_policy(
 
 def evaluate_sequence(
     env,
-    model,
     task_checker,
     initial_state,
     eval_sequence,
-    val_annotations,
     debug,
-    ep_len,
-    rollout_video: Optional[RolloutVideo],
+    rollout_video: Optional[RolloutVideo] = None,
+    **kwargs,
 ):
     """
     Evaluates a sequence of language instructions.
@@ -159,13 +158,11 @@ def evaluate_sequence(
             rollout_video.new_subtask()
         success = rollout(
             env=env,
-            model=model,
             task_oracle=task_checker,
             subtask=subtask,
-            val_annotations=val_annotations,
             debug=debug,
-            ep_len=ep_len,
             rollout_video=rollout_video,
+            **kwargs,
         )
         if rollout_video is not None:
             rollout_video.draw_outcome(success)
@@ -176,15 +173,16 @@ def evaluate_sequence(
     return success_counter
 
 
-def rollout(
+def rollout(  # noqa: C901
     env,
     model,
     task_oracle,
     subtask,
     val_annotations,
     debug,
-    ep_len,
-    rollout_video: Optional[RolloutVideo],
+    ep_len=360,
+    rollout_video: Optional[RolloutVideo] = None,
+    pcd_as_part_of_obs=False,
 ):
     """
     Run the actual rollout on one subtask (which is one natural language instruction).
@@ -193,6 +191,8 @@ def rollout(
         print(f"{subtask} ", end="")
         time.sleep(0.5)
     obs = env.get_obs()
+    if pcd_as_part_of_obs:
+        obs = compute_pcd_as_part_of_obs(obs, env)
     # get lang annotation for subtask
     lang_annotation = val_annotations[subtask][0]
     model.reset()
@@ -201,6 +201,8 @@ def rollout(
     for _step in range(ep_len):
         action = model.step(obs, lang_annotation)
         obs, _, _, current_info = env.step(action)
+        if pcd_as_part_of_obs:
+            obs = compute_pcd_as_part_of_obs(obs, env)
         if debug:
             img = env.render(mode="rgb_array")
             join_vis_lang(img, lang_annotation)
@@ -245,6 +247,7 @@ def main(cfg: DictConfig):
         num_sequences=cfg.num_sequences,
         ep_len=cfg.ep_len,
         num_videos=cfg.num_videos,
+        pcd_as_part_of_obs=cfg.pcd_as_part_of_obs,
     )
 
 

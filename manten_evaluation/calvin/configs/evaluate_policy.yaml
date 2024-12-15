@@ -11,6 +11,8 @@ num_sequences: 1000
 debug: False
 num_videos: 0
 
+pcd_as_part_of_obs: True # needed for TDDA
+
 eval_log_dir: ???
 dataset_path: ???
 calvin_models_dir: ???

@@ -6,16 +6,16 @@ import torch
 from torch import nn
 from torch.nn import functional as F
 
-from manten.networks.clip import load_clip
-from manten.networks.position_encodings import RotaryPositionEncoding3D
-from manten.networks.resnet import load_resnet18, load_resnet50
-from manten.networks.three_dda.custom_feature_pyramid_network import (
+from .clip import load_clip
+from .custom_feature_pyramid_network import (
     UsageAwareMemoryEfficientFeaturePyramidNetwork,
 )
-from manten.networks.three_dda.layers import (
+from .layers import (
     FFWRelativeCrossAttentionModule,
     ParallelAttention,
 )
+from .position_encodings import RotaryPositionEncoding3D
+from .resnet import load_resnet18, load_resnet50
 
 
 class Encoder(nn.Module):

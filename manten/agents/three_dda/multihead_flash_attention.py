@@ -1,17 +1,22 @@
-# ruff: noqa: SLF001, C901, PLR0915, PLR0913, PT018, PLR0912, B028
+"""Mostly follow multihead_custom_attention.py
+This script needed to be cleaned up
+"""
+
+# ruff: noqa: SLF001, C901, PLR0915, PLR0913, ARG001, PT018, PLR0912, B028
 
 import warnings
 
 import torch
+from flash_attn import flash_attn_func
 from torch.nn import Linear, Module
 from torch.nn import functional as F
 from torch.nn.init import constant_, xavier_normal_, xavier_uniform_
 from torch.nn.parameter import Parameter
 
-from manten.networks.position_encodings import RotaryPositionEncoding
+from .position_encodings import RotaryPositionEncoding
 
 
-class MultiheadCustomAttention(Module):
+class MultiheadFlashAttention(Module):
     r"""Allows the model to jointly attend to information
     from different representation subspaces.
     See reference: Attention Is All You Need
@@ -305,7 +310,6 @@ def multi_head_attention_forward(
 
     head_dim = embed_dim // num_heads
     assert head_dim * num_heads == embed_dim, "embed_dim must be divisible by num_heads"
-    scaling = float(head_dim) ** -0.5
 
     if use_separate_proj_weight is not True:
         if qkv_same:
@@ -387,7 +391,6 @@ def multi_head_attention_forward(
             q = F.linear(query, q_proj_weight_non_opt, in_proj_bias)
             k = F.linear(key, k_proj_weight_non_opt, in_proj_bias)
             v = F.linear(value, v_proj_weight_non_opt, in_proj_bias)
-    q = q * scaling
 
     if bias_k is not None and bias_v is not None:
         if static_k is None and static_v is None:
@@ -490,89 +493,16 @@ def multi_head_attention_forward(
                 dim=1,
             )
 
-    attn_output_weights = torch.bmm(q, k.transpose(1, 2))
-    assert list(attn_output_weights.size()) == [bsz * num_heads, tgt_len, src_len]
-
-    if attn_mask is not None:
-        attn_mask = attn_mask.unsqueeze(0)
-        attn_output_weights += attn_mask
-
-    if key_padding_mask is not None:
-        attn_output_weights = attn_output_weights.view(bsz, num_heads, tgt_len, src_len)
-        attn_output_weights = attn_output_weights.masked_fill(
-            key_padding_mask.unsqueeze(1).unsqueeze(2), float("-inf")
-        )
-        attn_output_weights = attn_output_weights.view(bsz * num_heads, tgt_len, src_len)
-
-    if slot_competition:
-        attn_output_weights = F.softmax(attn_output_weights, dim=-2) + 1e-8
-        attn_output_weights = attn_output_weights / attn_output_weights.sum(
-            dim=-1, keepdim=True
-        )
-    else:
-        attn_output_weights = F.softmax(attn_output_weights, dim=-1)
-
-    attn_output_weights = F.dropout(attn_output_weights, p=dropout_p, training=training)
-
-    attn_output = torch.bmm(attn_output_weights, v)
-    assert list(attn_output.size()) == [bsz * num_heads, tgt_len, head_dim]
-
-    # do memorizing transformer gating
-    if (gate_attn is not None) and (k_mem is not None) and (v_mem is not None):
-        k_mem = k_mem.permute((2, 0, 1))
-        key_mem_len = k_mem.shape[0]
-        k_mem = (
-            k_mem.contiguous().view(key_mem_len, bsz * num_heads, head_dim).transpose(0, 1)
-        )
-        v_mem = v_mem.permute((2, 0, 1))
-        v_mem = (
-            v_mem.contiguous().view(key_mem_len, bsz * num_heads, head_dim).transpose(0, 1)
-        )
-        #         if True:
-        #             k_mem = F.normalize(k_mem, dim = -1)
-
-        attn_output_weights_mem = torch.bmm(q, k_mem.transpose(1, 2))  # [24, 16, 110]
-        # bcz correspondence b/w key key is good not query, key visually
-        #         attn_output_weights_mem = torch.bmm(k, k_mem.transpose(1, 2))
-        attn_output_weights_mem = F.softmax(attn_output_weights_mem, dim=-1)
-        if mem_mask is not None:
-            mem_mask = mem_mask.unsqueeze(1).unsqueeze(1)  # [B, 1, 1, key_mem_len]
-            attn_output_weights_mem = attn_output_weights_mem.reshape(
-                bsz, num_heads, tgt_len, key_mem_len
-            )
-            attn_output_weights_mem = attn_output_weights_mem * mem_mask
-            attn_output_weights_mem = attn_output_weights_mem.reshape(
-                bsz * num_heads, tgt_len, key_mem_len
-            )
-
-        attn_output_weights_mem = F.dropout(
-            attn_output_weights_mem, p=dropout_p, training=training
-        )
-        attn_output_mem = torch.bmm(
-            attn_output_weights_mem, v_mem
-        )  # [bsz * num_heads, tgt_len, head_dim]
-
-        # gated learnable attention like memorizing transformers
-        print("gate_attn ", torch.sigmoid(gate_attn))
-        gate = torch.sigmoid(gate_attn).reshape(-1, 1, 1, 1)  # (n_head, 1, 1, 1)
-        attn_output_mem = attn_output_mem.view(bsz, num_heads, tgt_len, head_dim).transpose(
-            0, 1
-        )  # [num_heads, bsz, tgt_len, head_dim]
-        attn_output = attn_output.view(bsz, num_heads, tgt_len, head_dim).transpose(
-            0, 1
-        )  # [num_heads, bsz, tgt_len, head_dim]
-        attn_output = gate * attn_output_mem + (1.0 - gate) * attn_output
-        attn_output = attn_output.transpose(1, 0).view(bsz * num_heads, tgt_len, head_dim)
+    q = q.unflatten(0, (bsz, num_heads)).transpose(1, 2).to(torch.float16)
+    k = k.unflatten(0, (bsz, num_heads)).transpose(1, 2).to(torch.float16)
+    v = v.unflatten(0, (bsz, num_heads)).transpose(1, 2).to(torch.float16)
+    attn_output = flash_attn_func(q, k, v, dropout_p=dropout_p if training else 0.0).to(
+        query.dtype
+    )  # (bs, tgt_len, nheads, dim)
+    attn_output = attn_output.flatten(-2)  # (bs, tgt_len, nheads * dim)
 
     attn_output = attn_output.transpose(0, 1).contiguous().view(tgt_len, bsz, embed_dim)
     attn_output = F.linear(attn_output, out_proj_weight, out_proj_bias)
 
-    if return_kv:
-        return attn_output, q, k, v
-    elif need_weights:
-        # average attention weights over heads
-        attn_output_weights = attn_output_weights.view(bsz, num_heads, tgt_len, src_len)
-        #         return attn_output, attn_output_weights.sum(dim=1) / num_heads
-        return (attn_output, attn_output_weights)
-    else:
-        return attn_output, None
+    # Return None to be compatible with MultiheadCustomAttention
+    return attn_output, None

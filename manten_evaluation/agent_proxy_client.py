@@ -1,7 +1,8 @@
-import pickle
 from logging import getLogger
 
 import requests
+
+from manten.utils.utils_serialization import MantenAgentSerialization
 
 logger = getLogger(__name__)
 
@@ -37,12 +38,14 @@ class AgentProxyClient:
         try:
             response = requests.post(
                 self._url,
-                data=pickle.dumps({"method": method, "args": args, "kwargs": kwargs}),
+                data=MantenAgentSerialization.serialize(
+                    {"method": method, "args": args, "kwargs": kwargs}
+                ),
                 headers={"Content-Type": "application/octet-stream"},
                 timeout=self._timeout,
             )
             response.raise_for_status()
-            data = pickle.loads(response.content)  # noqa: S301
+            data = MantenAgentSerialization.deserialize(response.content)
             if "result" in data:
                 return data["result"]
             else:

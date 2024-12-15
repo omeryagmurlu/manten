@@ -2,8 +2,9 @@ import numpy as np
 import torch
 import torch.nn.functional as F
 
-from manten.agents.metrics.base_metric import BaseMetric, BaseStats
 from manten.utils.utils_pytree import with_tree_map
+
+from .base_metric import BaseMetric, BaseStats
 
 
 class TrajectoryStats(BaseStats):
