@@ -345,8 +345,17 @@ class TDDAAgentWrapper:
         if self._ws.current_step % self._ws.execute_len == 0:
             self._ws.current_trajectory = self.step_agent(obs, lang_annotation)
 
-        action = self._ws.current_trajectory[0, self._ws.current_step % self._ws.execute_len]
+        curr_traj = self._ws.current_trajectory[
+            0, self._ws.current_step % self._ws.execute_len
+        ]
         self._ws.current_step += 1
+        # fkin calvin interprets the action different depending on whether its (3,3,1) or (7)
+        # for no fkin reason / I spent 3 days debugging this, thought I was going insane with my model
+        action = [  # I hate my life
+            curr_traj[:3],
+            curr_traj[3:6],
+            curr_traj[[6]],
+        ]
         return action
 
 
