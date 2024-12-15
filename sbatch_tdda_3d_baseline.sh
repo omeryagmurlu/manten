@@ -7,7 +7,7 @@
 # Cluster Settings
 #SBATCH -n 1       # Number of tasks
 #SBATCH -c 16  # Number of cores per task
-#SBATCH -t 2-00:00:00 # 1-04:00:00 ## # 06:00:00 # 1-00:30:00 # 2-00:00:00
+#SBATCH -t 06:00:00 # 1-04:00:00 ## # 06:00:00 # 1-00:30:00 # 2-00:00:00
 #SBATCH --gres=gpu:4
 #SBATCH --ntasks-per-node=1
 
@@ -19,4 +19,4 @@
 source /home/hk-project-sustainebot/uqtlv/.mambainit
 micromamba activate /hkfs/work/workspace/scratch/uqtlv-code_n_mamba/micromamba/envs/manten
 
-accelerate launch --main_process_port 29872 --config_file /home/hk-project-sustainebot/uqtlv/.cache/huggingface/accelerate/default_config.yaml /hkfs/work/workspace/scratch/uqtlv-code_n_mamba/code/manten/manten/scripts/train.py experiment=tdda_3d_baseline training.num_epochs=3000 _detailed_metrics_every_n_epochs=25 _save_every_n_epochs=100 training.log_every_n_steps=250
+accelerate launch --main_process_port 29872 --config_file /home/hk-project-sustainebot/uqtlv/.cache/huggingface/accelerate/default_config.yaml /hkfs/work/workspace/scratch/uqtlv-code_n_mamba/code/manten/manten/scripts/train.py experiment=tdda_3d_baseline training.num_epochs=1000 _detailed_metrics_every_n_epochs=25 _save_every_n_epochs=50 training.log_every_n_steps=150

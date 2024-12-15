@@ -1,8 +1,8 @@
 _calvin_ver: task_D_D
 
-_training_calvin_data: ./data/calvin/packaged_${._calvin_ver}/training
-_validation_calvin_data: ./data/calvin/packaged_${._calvin_ver}/validation
-_instructions: ./data/calvin_instructions/packaged_${._calvin_ver}
+_training_calvin_data: ???
+_validation_calvin_data: ???
+_instructions: ???
 
 _relative_action: ${_relative_action}
 _batch_size: 30
