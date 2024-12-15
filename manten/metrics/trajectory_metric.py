@@ -1,9 +1,10 @@
 import numpy as np
+import torch
 import torch.nn.functional as F
 
-from manten.agents.metrics.base_metric import BaseMetric, BaseStats
-from manten.utils.utils_decorators import with_shallow_copy, with_state_dict
 from manten.utils.utils_pytree import with_tree_map
+
+from .base_metric import BaseMetric, BaseStats
 
 
 class TrajectoryStats(BaseStats):
@@ -26,20 +27,20 @@ class TrajectoryStats(BaseStats):
         return {key: metrics[key] for key in ["mean_x", "mean_y", "mean_z"]}
 
 
-@with_state_dict("pred_stats")
-@with_shallow_copy("pred_stats")
+# @with_state_dict("pred_stats")
+# @with_shallow_copy("pred_stats")
 class TrajectoryMetric(BaseMetric):
     def __init__(self):
         super().__init__()
-        self.pred_stats = TrajectoryStats()
+        # self.pred_stats = TrajectoryStats()
 
     def feed(self, ground, prediction):
         super().feed(ground, prediction)
-        self.pred_stats.feed(prediction)
+        # self.pred_stats.feed(prediction)
 
     def reset(self):
         super().reset()
-        self.pred_stats.reset()
+        # self.pred_stats.reset()
 
     def loss(self):
         raise ValueError("TrajectoryMetric does not support loss()")
@@ -49,18 +50,28 @@ class TrajectoryMetric(BaseMetric):
         pred_pos, pred_quat, pred_open = self.prediction
         gt_pos, gt_quat, gt_open = self.ground
 
+        pos_l2 = ((pred_pos - gt_pos) ** 2).sum(-1).sqrt()
+        # symmetric quaternion eval
+        quat_l1 = (pred_quat - gt_quat).abs().sum(-1)
+        quat_l1_ = (pred_quat + gt_quat).abs().sum(-1)
+        select_mask = (quat_l1 < quat_l1_).float()
+        quat_l1 = select_mask * quat_l1 + (1 - select_mask) * quat_l1_
+        # gripper openness
+        openness = ((pred_open >= 0.5) == (gt_open > 0.0)).bool()  # noqa: PLR2004
+
         ret = {
-            "mae_x": F.l1_loss(pred_pos[..., 0], gt_pos[..., 0]),
-            "mae_y": F.l1_loss(pred_pos[..., 1], gt_pos[..., 1]),
-            "mae_z": F.l1_loss(pred_pos[..., 2], gt_pos[..., 2]),
-            "mae_pos": F.l1_loss(pred_pos[..., :3], gt_pos[..., :3]),
-            "mae_quat": F.l1_loss(pred_quat[..., :4], gt_quat[..., :4]),
-            "bce_open": F.binary_cross_entropy_with_logits(
-                pred_open[..., :], gt_open[..., :]
+            "mse_traj": F.mse_loss(
+                torch.cat([pred_pos, pred_quat, pred_open], dim=-1),
+                torch.cat([gt_pos, gt_quat, gt_open], dim=-1),
             ),
+            "pos_l2": pos_l2.mean(),
+            "pos_acc_001": (pos_l2 < 0.01).float().mean(),  # noqa: PLR2004
+            "rot_l1": quat_l1.mean(),
+            "rot_acc_0025": (quat_l1 < 0.025).float().mean(),  # noqa: PLR2004
+            "gripper": openness.flatten().float().mean(),
         }
 
-        ret.update({f"pred_{key}": value for key, value in self.pred_stats.metrics().items()})
+        # ret.update({f"pred_{key}": value for key, value in self.pred_stats.metrics().items()})
 
         return ret
 
@@ -74,6 +85,9 @@ class TrajectoryMetric(BaseMetric):
         for the first sample in the batch in 3D.
         """
         from manten.utils.utils_visualization import visualize_2_pos_traj
+
+        pred_pos, pred_quat, pred_open = self.prediction
+        gt_pos, gt_quat, gt_open = self.ground
 
         if sort_key is None:
             samples = [(0, "batch_first/vis_pos")]
@@ -89,8 +103,8 @@ class TrajectoryMetric(BaseMetric):
 
         retval = {
             key_name: visualize_2_pos_traj(
-                self.prediction[0][sample_idx].cpu().numpy(),
-                self.ground[0][sample_idx].cpu().numpy(),
+                pred_pos[sample_idx].cpu().numpy(),
+                gt_pos[0][sample_idx].cpu().numpy(),
             )
             for sample_idx, key_name in samples
         }

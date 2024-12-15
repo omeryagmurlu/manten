@@ -4,12 +4,15 @@ import einops
 import torch
 from torch import nn
 
-from manten.networks.position_encodings import RotaryPositionEncoding3D, SinusoidalPosEmb
-from manten.networks.three_dda.layers import (
+from .layers import (
     FFWRelativeCrossAttentionModule,
     FFWRelativeSelfAttentionModule,
     FFWRelativeSelfCrossAttentionModule,
     ParallelAttention,
+)
+from .position_encodings import (
+    RotaryPositionEncoding3D,
+    SinusoidalPosEmb,
 )
 
 

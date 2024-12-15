@@ -1,43 +1,23 @@
-import pickle
 from logging import getLogger
-from typing import Protocol
 
 import requests
+
+from manten.utils.utils_serialization import MantenAgentSerialization
 
 logger = getLogger(__name__)
 
 
-class IMetric(Protocol):
-    def feed(self, ground, prediction):
-        pass
-
-    def reset(self):
-        pass
-
-    def loss(self):
-        pass
-
-    def metrics(self) -> dict:
-        pass
-
-    def summary_metrics(self) -> dict:
-        pass
-
-    def visualize(self, **_) -> dict:
-        pass
-
-
-class IAgent(Protocol):
-    def reset(self):
-        pass
-
-    def forward(self, agent_mode: str, *args, **kwargs) -> IMetric:
-        pass
-
-
 class AgentProxyClient:
-    def __init__(self, url="http://localhost:12567"):
+    def __init__(self, url="http://localhost:12567", timeout=10):
         self._url = url
+        self._timeout = None
+
+        # disable timeout for __init__ request
+        logger.info("sending __init__ request to proxy")
+        self._send_request("__init__", (), {})
+        logger.info("proxy responded to __init__")
+
+        self._timeout = timeout
 
     def __call__(self, *args, **kwargs):
         return self._send_request("__call__", args, kwargs)
@@ -58,12 +38,14 @@ class AgentProxyClient:
         try:
             response = requests.post(
                 self._url,
-                data=pickle.dumps({"method": method, "args": args, "kwargs": kwargs}),
+                data=MantenAgentSerialization.serialize(
+                    {"method": method, "args": args, "kwargs": kwargs}
+                ),
                 headers={"Content-Type": "application/octet-stream"},
-                timeout=10,
+                timeout=self._timeout,
             )
             response.raise_for_status()
-            data = pickle.loads(response.content)  # noqa: S301
+            data = MantenAgentSerialization.deserialize(response.content)
             if "result" in data:
                 return data["result"]
             else:
@@ -71,17 +53,3 @@ class AgentProxyClient:
         except requests.RequestException as e:
             logger.exception("HTTP request failed", exc_info=e)
             raise
-
-
-if __name__ == "__main__":
-    client = AgentProxyClient()
-    client.reset()
-    print(1)
-    client.reset()
-    print(2)
-    client.reset()
-    print(3)
-    client.reset()
-    print("now calling directly")
-    client("lol")
-    print("done")

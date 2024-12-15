@@ -3,7 +3,7 @@ from abc import ABC, abstractmethod
 import torch
 from torch import nn
 
-from manten.agents.metrics.base_metric import BaseMetric
+from manten.metrics.base_metric import BaseMetric
 
 
 class BaseAgent(nn.Module, ABC):
