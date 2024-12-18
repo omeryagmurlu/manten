@@ -38,9 +38,9 @@ class BaseAgent(nn.Module, ABC):
     def train_step(self, batch: dict) -> BaseMetric:
         raise NotImplementedError
 
-    @abstractmethod
-    def validate_step(self, batch: dict) -> BaseMetric:
-        raise NotImplementedError
+    @torch.no_grad()
+    def validate_step(self, *a, **k) -> BaseMetric:
+        return self.train_step(*a, **k)
 
     @abstractmethod
     def eval_step(

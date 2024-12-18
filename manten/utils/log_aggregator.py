@@ -4,7 +4,7 @@ import einops
 import numpy as np
 from accelerate.utils import gather_object
 
-from manten.agents.metrics.base_metric import BaseMetric
+from manten.metrics.base_metric import BaseMetric
 from manten.utils.utils_decorators import with_name_resolution
 
 

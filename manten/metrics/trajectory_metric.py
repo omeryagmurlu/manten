@@ -77,7 +77,7 @@ class TrajectoryMetric(BaseMetric):
 
     def summary_metrics(self):
         metrics = self.metrics()
-        return {key: metrics[key] for key in ["mae_pos", "bce_open"]}
+        return {key: metrics[key] for key in ["mse_traj", "pos_l2"]}
 
     def visualize(self, sort_key=None, reduction_hint=None):
         """
@@ -104,7 +104,7 @@ class TrajectoryMetric(BaseMetric):
         retval = {
             key_name: visualize_2_pos_traj(
                 pred_pos[sample_idx].cpu().numpy(),
-                gt_pos[0][sample_idx].cpu().numpy(),
+                gt_pos[sample_idx].cpu().numpy(),
             )
             for sample_idx, key_name in samples
         }

@@ -32,4 +32,6 @@ class OptimizerConfigurator:
                     self.default_params_config["params"] = []
                 self.default_params_config["params"].append(param)
 
-        return [self.default_params_config, *self.params_configs]
+        out_params = [self.default_params_config, *self.params_configs]
+
+        return [out_param for out_param in out_params if "params" in out_param]

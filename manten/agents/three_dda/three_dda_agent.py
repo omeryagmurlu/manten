@@ -161,7 +161,7 @@ class ThreeDDAAgent(BaseAgent):
             traj_len = 20  # # this is hardcoded but eeeh
 
         (_, _, trajectory_mask, inputs, conditions) = self.process_batch(
-            batch, is_evaluation_mode=True
+            batch, is_evaluation_mode=False
         )
 
         B, _, D = inputs["curr_gripper"].shape

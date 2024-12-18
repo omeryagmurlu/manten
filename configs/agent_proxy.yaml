@@ -11,8 +11,8 @@ deterministic: False
 device: cuda
 
 testing:
-  train_folder: /home/i53/student/yagmurlu/code/manten/outputs/from_horeka/11-53-09/accelerate
-  checkpoint: best_checkpoint
+  train_folder: ???
+  checkpoint: null
   agent_override: {}
 
 host: "localhost"

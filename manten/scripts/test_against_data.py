@@ -14,6 +14,20 @@ from manten.utils.utils_root import root
 logger = get_logger(__name__)
 
 
+def plot_2_traj(traj, batch, idx=0):
+    import matplotlib.pyplot as plt
+
+    tg = batch["trajectory"].cpu()
+    t = traj.cpu()
+
+    plt.subplot(111, projection="3d")
+    plt.plot(t[idx, :, 0], t[idx, :, 1], t[idx, :, 2], color="blue")
+    plt.plot(tg[idx, :, 0], tg[idx, :, 1], tg[idx, :, 2], color="orange")
+    plt.show()
+    plt.cla()
+    plt.clf()
+
+
 class TestConfig(Protocol):
     train_folder: str
     checkpoint: str | None
@@ -24,7 +38,7 @@ def every_n_steps(n, step):
     return bool(n) and ((step + 1) % n == 0)
 
 
-def evaluation_step(agent, batch):
+def single_step(agent, batch):
     with torch.inference_mode():
         trajectory, metric = agent("eval", batch, compare_gt=True)
     return metric, trajectory
@@ -49,7 +63,8 @@ def test_agent_with_data(
             progress.close()
             break
 
-        metric, trajectory = evaluation_step(agent, tree_map(lambda x: x.to(device), batch))
+        batch = tree_map(lambda x: x.to(device), batch)  # noqa: PLW2901
+        trajectory, metric = single_step(agent, batch)
 
         progress.set_postfix(**metric.summary_metrics())
         log_aggregator.log(metric)

@@ -41,7 +41,7 @@ agent:
     lang_enhanced: True
     rotation_parametrization: ${..._rotation_parametrization}
   metric:
-    _target_: manten.agents.metrics.three_dda_metric.ThreeDDAMetric
+    _target_: manten.metrics.three_dda_metric.ThreeDDAMetric
   num_history: ${.._num_history}
   relative: ${.._relative_action}
   use_instruction: True

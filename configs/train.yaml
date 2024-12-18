@@ -28,6 +28,7 @@ training:
   eval_train_ene_max_steps: .inf
   eval_test_ene_max_steps: .inf
   resume_from_save: null
+  vis_metric_key: null
   log_aggregator:
     _target_: manten.utils.log_aggregator.LogAggregator
 
@@ -41,20 +42,22 @@ accelerator_init_trackers:
     wandb:
       entity: "omeryagmurlu"
 
-_lr: 0.0003
-_weight_decay: 0.005
+# _lr: 0.0003 # 3e-4
+_lr: 0.001 # 1e-3
+_weight_decay: 0.0003
 optimizer_configurator:
   _target_: manten.utils.optimizer_configurator.OptimizerConfigurator
   default_params_config:
     lr: ${_lr}
     weight_decay: ${_weight_decay}
   params_configs:
-    - contains_substrings:
-        - "bias"
-        - "LayerNorm.weight"
-        - "LayerNorm.bias"
-      lr: ${_lr}
-      weight_decay: 0.0
+    []
+    # - contains_substrings:
+    #     # - "bias"
+    #     - "LayerNorm.weight"
+    #     - "LayerNorm.bias"
+    #   lr: ${_lr}
+    #   weight_decay: 0.0
 optimizer:
   _target_: torch.optim.AdamW
   lr: ${_lr}

@@ -1,0 +1,10 @@
+# @package _global_
+
+defaults:
+  # - /evaluator: calvin
+  - /datamodule: mnist
+
+datamodule:
+  train_dataloader: null
+# can also change num_diffusion_timesteps for agent inference here
+# via agent_override, since the agent is taken from train_folder

@@ -199,10 +199,10 @@ class TrainLoops:
         logger.info("evaluation:%s@epoch:%d", split, self.state.epoch)
 
         self.log_aggregator.all_gather()
-        if self.accelerator.is_main_process:
+        if self.cfg.vis_metric_key is not None and self.accelerator.is_main_process:
             eval_logs = self.log_aggregator.collate(f"eval-{split}/", reset=False)
             print(tabulate(eval_logs.items()))
-            eval_logs.update(self.log_aggregator.create_vis_logs("mae_pos"))
+            eval_logs.update(self.log_aggregator.create_vis_logs(self.cfg.vis_metric_key))
             self.accelerator.log(eval_logs, step=self.state.global_step)
         self.log_aggregator.reset()
 

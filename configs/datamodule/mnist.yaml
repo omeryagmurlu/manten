@@ -1,0 +1,23 @@
+_mnist_batch_size: 256
+datamodule:
+  _target_: manten.utils.dummy_datamodule.DummyDataModule
+  train_dataloader:
+    _target_: torch.utils.data.DataLoader
+    dataset:
+      _target_: manten.data.dataset_mnist.MNISTDataset
+      training: True
+    batch_size: ${..._mnist_batch_size}
+    shuffle: True
+    num_workers: 4
+    pin_memory: True
+    drop_last: False
+  test_dataloader:
+    _target_: torch.utils.data.DataLoader
+    dataset:
+      _target_: manten.data.dataset_mnist.MNISTDataset
+      training: False
+    batch_size: ${..._mnist_batch_size}
+    shuffle: False
+    num_workers: 4
+    pin_memory: True
+    drop_last: False

@@ -30,7 +30,7 @@ class BaseMetric(ABC):
         """Return a summary of metrics. Useful for use in tqdm post_fix"""
         return self.metrics()
 
-    def visualize(self, **_) -> dict:
+    def visualize(self, *_, **__) -> dict:
         """Return a visualization of the metric. Useful for tensorboard"""
         return
 
@@ -39,6 +39,7 @@ class BaseMetric(ABC):
 @with_shallow_copy("stats")
 class BaseStats(BaseMetric, ABC):
     def __init__(self):
+        super().__init__()
         self.stats = None
 
     def feed(self, stats):

@@ -31,3 +31,9 @@ def visualize_2_pos_traj(pred_pos, gt_pos):
     fig.update_layout(scene={"xaxis_title": "X", "yaxis_title": "Y", "zaxis_title": "Z"})
 
     return fig
+
+
+def visualize_image(image, caption=None):
+    import wandb
+
+    return wandb.Image(image, caption=caption)
