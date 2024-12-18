@@ -12,19 +12,25 @@ agent:
     # _target_: manten.agents.mnist_agent.MNISTAgent
     _target_: manten.agents.mnist_agent.MNISTConditionalAgent
     num_classes: 10
+    cls_emb_dim: 4
     noise_scheduler:
       _target_: diffusers.schedulers.DDPMScheduler
       num_train_timesteps: ${..._diffusion_timesteps}
-    n_inference_steps: 10
+      beta_schedule: squaredcos_cap_v2
+    n_inference_steps: 100
     metric:
       _target_: manten.metrics.mnist_metric.MNISTMetric
 
 datamodule:
-  _mnist_batch_size: 256
+  _mnist_batch_size: 768
 
 seed: 42
 
+_detailed_metrics_every_n_epochs: 5
+_save_every_n_epochs: 5
 training:
+  num_epochs: 25
   vis_metric_key: "h"
-  eval_train_ene_max_steps: 3
-  eval_test_ene_max_steps: 3
+  eval_train_ene_max_steps: 1
+  eval_test_ene_max_steps: 1
+  sanity_check: 0
