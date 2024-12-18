@@ -13,8 +13,9 @@ project_name: manten
 seed: ???
 deterministic: False
 
-_detailed_metrics_every_n_epochs: 10
+_detailed_metrics_every_n_epochs: 5
 _save_every_n_epochs: 20
+_skip_first_n_epochs: 10
 training:
   num_epochs: 80
   max_steps: .inf
@@ -27,6 +28,10 @@ training:
   validate_ene_max_steps: .inf
   eval_train_ene_max_steps: .inf
   eval_test_ene_max_steps: .inf
+  skip_validate_first_n_epochs: ${_skip_first_n_epochs}
+  skip_eval_train_first_n_epochs: ${_skip_first_n_epochs}
+  skip_eval_test_first_n_epochs: ${_skip_first_n_epochs}
+  skip_save_first_n_epochs: ${_skip_first_n_epochs}
   resume_from_save: null
   vis_metric_key: null
   log_aggregator:

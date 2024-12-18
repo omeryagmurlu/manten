@@ -22,14 +22,15 @@ agent:
       _target_: manten.metrics.mnist_metric.MNISTMetric
 
 datamodule:
-  _mnist_batch_size: 768
+  _mnist_batch_size: 128
 
 seed: 42
 
-_detailed_metrics_every_n_epochs: 5
-_save_every_n_epochs: 5
+_detailed_metrics_every_n_epochs: 1
+_save_every_n_epochs: 10
+_skip_first_n_epochs: 10
 training:
-  num_epochs: 25
+  num_epochs: 50
   vis_metric_key: "h"
   eval_train_ene_max_steps: 1
   eval_test_ene_max_steps: 1

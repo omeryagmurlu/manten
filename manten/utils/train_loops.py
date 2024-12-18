@@ -77,18 +77,26 @@ class TrainLoops:
         for self.state.epoch in range(starting_epoch, to_epoch):
             mean_epoch_loss, last_batch_loss = self.train_loop()
 
-            if self.every_n_epochs(self.cfg.validate_every_n_epochs):
+            if self.every_n_epochs(
+                self.cfg.validate_every_n_epochs, self.cfg.skip_validate_first_n_epochs
+            ):
                 self.validation_loop()
 
-            if self.every_n_epochs(self.cfg.eval_train_every_n_epochs):
+            if self.every_n_epochs(
+                self.cfg.eval_train_every_n_epochs, self.cfg.skip_eval_train_first_n_epochs
+            ):
                 self.evaluation_loop(
                     self.train_dl, self.cfg.eval_train_ene_max_steps, "train"
                 )
 
-            if self.every_n_epochs(self.cfg.eval_test_every_n_epochs):
+            if self.every_n_epochs(
+                self.cfg.eval_test_every_n_epochs, self.cfg.skip_eval_test_first_n_epochs
+            ):
                 self.evaluation_loop(self.test_dl, self.cfg.eval_test_ene_max_steps, "test")
 
-            if self.every_n_epochs(self.cfg.save_every_n_epochs):
+            if self.every_n_epochs(
+                self.cfg.save_every_n_epochs, self.cfg.skip_save_first_n_epochs
+            ):
                 self.save_checkpoint(mean_epoch_loss)
         logger.info("training finished, trained for %d epochs", self.state.epoch)
 
@@ -296,7 +304,10 @@ class TrainLoops:
     def save_agent_config(self, checkpoint_path):
         save_agent_config(checkpoint_path, self.whole_cfg.agent.agent)
 
-    def every_n_epochs(self, n):
+    def every_n_epochs(self, n, skip_first=0):
+        if self.state.epoch < skip_first:
+            return False
+
         return bool(n) and (
             (self.state.epoch + 1) % n == 0
             or (self.state.epoch + 1) == self.cfg.num_epochs  # or last epoch

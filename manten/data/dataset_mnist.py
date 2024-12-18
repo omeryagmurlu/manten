@@ -1,4 +1,4 @@
-from datasets import load_dataset
+import torchvision
 from torch.utils.data import Dataset
 from torchvision import transforms
 
@@ -14,15 +14,17 @@ DEFAULT_TRANSFORM = transforms.Compose(
 class MNISTDataset(Dataset):
     def __init__(self, training=False):
         self.transform = DEFAULT_TRANSFORM
-        self.dataset = load_dataset("mnist", split="train" if training else "test")
+        self.dataset = torchvision.datasets.MNIST(
+            root="~/mnist/", train=training, download=True
+        )
 
     def __len__(self):
         return len(self.dataset)
 
     def __getitem__(self, idx):
-        item = self.dataset[idx]
-        image = item["image"]
-        label = item["label"]
+        x, y = self.dataset[idx]
+        image = x
+        label = y
         if self.transform:
             image = self.transform(image)
         return {
