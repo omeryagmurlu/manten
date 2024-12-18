@@ -33,7 +33,22 @@ def visualize_2_pos_traj(pred_pos, gt_pos):
     return fig
 
 
-def visualize_image(image, caption=None):
+def visualize_image(images, labels=None, grid_edge=5):
+    import einops
+    import torch
     import wandb
+
+    images = images[:grid_edge * grid_edge]
+    # images: (B, C, H, W) to (B, C, H, W) with B = grid_edge * grid_edge, must pad accordingly
+    if images.shape[0] < grid_edge * grid_edge:
+        pad = torch.zeros(grid_edge * grid_edge - images.shape[0], *images.shape[1:], dtype=images.dtype)
+        images = torch.cat([images, pad], dim=0)
+
+    image = einops.rearrange(images, "(nh nw) c h w -> c (nh h) (nw w)", nh=grid_edge, nw=grid_edge)
+
+    if labels is not None:
+        caption = f"Labels: {labels[:grid_edge * grid_edge]}"
+    else:
+        caption = None
 
     return wandb.Image(image, caption=caption)

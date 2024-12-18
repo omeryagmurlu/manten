@@ -14,7 +14,7 @@ agent:
     num_classes: 10
     cls_emb_dim: 4
     noise_scheduler:
-      _target_: diffusers.schedulers.DDPMScheduler
+      _target_: diffusers.schedulers.DDIMScheduler
       num_train_timesteps: ${..._diffusion_timesteps}
       beta_schedule: squaredcos_cap_v2
     n_inference_steps: 100
@@ -22,14 +22,14 @@ agent:
       _target_: manten.metrics.mnist_metric.MNISTMetric
 
 datamodule:
-  _mnist_batch_size: 768
+  _mnist_batch_size: 2560
 
 seed: 42
 
-_detailed_metrics_every_n_epochs: 5
-_save_every_n_epochs: 5
+_detailed_metrics_every_n_epochs: 25
+_save_every_n_epochs: 50
 training:
-  num_epochs: 25
+  num_epochs: 500
   vis_metric_key: "h"
   eval_train_ene_max_steps: 1
   eval_test_ene_max_steps: 1

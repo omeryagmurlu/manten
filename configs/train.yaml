@@ -44,7 +44,7 @@ accelerator_init_trackers:
 
 # _lr: 0.0003 # 3e-4
 _lr: 0.001 # 1e-3
-_weight_decay: 0.0003
+_weight_decay: 0.0
 optimizer_configurator:
   _target_: manten.utils.optimizer_configurator.OptimizerConfigurator
   default_params_config:
