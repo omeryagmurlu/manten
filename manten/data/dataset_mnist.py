@@ -4,7 +4,7 @@ from torchvision import transforms
 
 DEFAULT_TRANSFORM = transforms.Compose(
     [
-        transforms.Resize((32, 32)),
+        # transforms.Resize((32, 32)),
         transforms.ToTensor(),
         transforms.Lambda(lambda x: 2 * (x - 0.5)),  # to -1, 1
     ]

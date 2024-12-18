@@ -10,7 +10,7 @@ agent:
   _dataset_stats: False
   agent:
     # _target_: manten.agents.mnist_agent.MNISTAgent
-    _target_: manten.agents.mnist_agent.MNISTConditionalAgent
+    _target_: manten.agents.mnist_conditional_agent.MNISTConditionalAgent
     num_classes: 10
     cls_emb_dim: 4
     noise_scheduler:
