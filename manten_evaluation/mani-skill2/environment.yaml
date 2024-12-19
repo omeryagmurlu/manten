@@ -1,0 +1,17 @@
+name: mani-skill2
+channels:
+  - pytorch
+  - nvidia
+  # - dglteam/label/th24_cu121
+  - conda-forge
+dependencies:
+  - python=3.10
+
+  - pytorch
+  - torchvision
+  - torchaudio
+  - pytorch-cuda=12.1
+
+  - vulkan-tools
+  - pip:
+      - mani-skill
