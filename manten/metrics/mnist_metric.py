@@ -21,7 +21,7 @@ class MNISTImageStats(BaseStats):
         return {"h": torch.tensor(self.stats.shape[2], dtype=torch.float32)}
 
     def visualize(self, *_, **__) -> dict:
-        return {"fib_image": visualize_image(self.stats[0])}
+        return {"image": visualize_image(self.stats)}
 
 
 class MNISTConditionalImageStats(BaseStats):
@@ -31,4 +31,4 @@ class MNISTConditionalImageStats(BaseStats):
 
     def visualize(self, *_, **__) -> dict:
         images, labels = self.stats
-        return {"fib_image": visualize_image(images[0], caption=f"Class: {labels[0]}")}
+        return {"image": visualize_image(images, labels)}

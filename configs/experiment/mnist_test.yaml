@@ -14,7 +14,7 @@ agent:
     num_classes: 10
     cls_emb_dim: 4
     noise_scheduler:
-      _target_: diffusers.schedulers.DDPMScheduler
+      _target_: diffusers.schedulers.DDIMScheduler
       num_train_timesteps: ${..._diffusion_timesteps}
       beta_schedule: squaredcos_cap_v2
     n_inference_steps: 100
