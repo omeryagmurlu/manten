@@ -1,0 +1,18 @@
+_dataset_stats: 42
+agent:
+  _target_: manten.agents.lowdim_diffusion_policy.agent.LowdimDiffusionPolicyAgent
+  metric:
+    _target_: manten.metrics.dummy_metric.MSELossDummyMetric
+  obs_horizon: ???
+  act_horizon: ???
+  pred_horizon: ??? # 16->8 leads to worse performance, maybe it is like generate a half image; 16->32, improvement is very marginal
+  act_dim: 7
+  diffusion_step_embed_dim: 64
+  unet_dims: [64, 128, 256] # default setting is about ~4.5M params
+  n_groups: 8 # jigu says it is better to let each group have at least 8 channels; it seems 4 and 8 are simila
+  observation_shape: [25]
+  noise_scheduler:
+    _target_: diffusers.schedulers.DDPMScheduler
+    num_train_timesteps: ???
+    beta_schedule: squaredcos_cap_v2
+  num_diffusion_iters: ???

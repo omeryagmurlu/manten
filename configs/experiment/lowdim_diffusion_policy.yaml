@@ -1,0 +1,30 @@
+# @package _global_
+
+defaults:
+  - /agent: lowdim_diffusion_policy
+  - /datamodule: maniskill
+
+seed: 42
+
+datamodule:
+  _task: PegInsertionSide-v1
+  _pack_root: /home/i53/student/yagmurlu/code/manten/data/maniskill2/packed_demos
+  _obs_horizon: 2
+  _pred_horizon: 16
+  _obs_modalities: ["state_obs"] # ["pcd_obs", "rgb_obs", "state_obs"]
+  _batch_size: 128
+  # _num_workers: 4
+
+agent:
+  agent:
+    obs_horizon: 2
+    act_horizon: 8
+    pred_horizon: 16
+    noise_scheduler:
+      num_train_timesteps: 100
+    num_diffusion_iters: 100
+
+training:
+  vis_metric_key: "pos_l2"
+
+_lr: 0.0001 # 1e-4

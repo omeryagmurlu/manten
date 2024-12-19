@@ -6,7 +6,6 @@ defaults:
 
   # following are global
   - experiment: ???
-  - optional local: local
   - debug: null
 
 project_name: manten

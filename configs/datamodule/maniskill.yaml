@@ -1,0 +1,48 @@
+_batch_size: 1024
+_num_workers: 4
+
+_task: ???
+_pack_root: ???
+_obs_horizon: ???
+_pred_horizon: ???
+_obs_modalities: ??? # ["pcd_obs", "rgb_obs", "state_obs"]
+
+datamodule:
+  _target_: manten.utils.dummy_datamodule.AutoTestDataModule
+  test_ratio: 0.05
+  shuffle_train: True
+  dataloader_fn:
+    _target_: torch.utils.data.DataLoader
+    _partial_: True
+    batch_size: ${..._batch_size}
+    num_workers: ${..._num_workers}
+    pin_memory: True
+    drop_last: True
+  dataset:
+    _target_: manten.data.dataset_maniskill.ManiSkillDataset
+    task: ${..._task}
+    pack_root: ${..._pack_root}
+    obs_horizon: ${..._obs_horizon}
+    pred_horizon: ${..._pred_horizon}
+    obs_modalities: ${..._obs_modalities}
+  # dataset:
+  #   _target_: torch.utils.data.ConcatDataset
+  #   datasets:
+  #     - _target_: manten.data.dataset_maniskill.ManiskillDataset
+  #       task: PegInsertionSide-v1
+  #       pack_root: ${..._pack_root}
+  #       obs_horizon: ${.._obs_horizon}
+  #       pred_horizon: ${.._pred_horizon}
+  #       obs_modalities: ${.._obs_modalities}
+  #     - _target_: manten.data.dataset_maniskill.ManiskillDataset
+  #       task:
+  #       pack_root: ${..._pack_root}
+  #       obs_horizon: ${.._obs_horizon}
+  #       pred_horizon: ${.._pred_horizon}
+  #       obs_modalities: ${.._obs_modalities}
+  #     - _target_: manten.data.dataset_maniskill.ManiskillDataset
+  #       task:
+  #       pack_root: ${..._pack_root}
+  #       obs_horizon: ${.._obs_horizon}
+  #       pred_horizon: ${.._pred_horizon}
+  #       obs_modalities: ${.._obs_modalities}

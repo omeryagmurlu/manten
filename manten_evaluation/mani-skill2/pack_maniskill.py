@@ -3,14 +3,13 @@
 import argparse
 import json
 import logging
-import pickle
 from concurrent.futures import ProcessPoolExecutor
 from functools import partial
 from pathlib import Path
 
 import h5py
 import numpy as np
-from optree import tree_flatten_with_path, tree_map
+from optree import tree_flatten_with_path
 from tqdm import tqdm
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s")
@@ -21,71 +20,79 @@ def load_json(filepath):
         return json.load(f)
 
 
-def inflate_h5_data(data):
-    out = {}
-    for k in data:
-        if isinstance(data[k], h5py.Dataset):
-            out[k] = data[k][:]
+def load_content_from_h5_file(file):
+    if isinstance(file, (h5py.File, h5py.Group)):
+        return {key: load_content_from_h5_file(file[key]) for key in list(file.keys())}
+    elif isinstance(file, h5py.Dataset):
+        return file[()]
+    else:
+        raise NotImplementedError(f"Unsupported h5 file type: {type(file)}")
+
+
+def load_hdf5(
+    path,
+):
+    # print("Loading HDF5 file", path)
+    file = h5py.File(path, "r")
+    ret = load_content_from_h5_file(file)
+    file.close()
+    # print("Loaded")
+    return ret
+
+
+def load_episode_hdf5(path, num_episode=None, single=False):
+    # print("Loading HDF5 file", path)
+    file = h5py.File(path, "r")
+    keys = list(file.keys())
+    if num_episode is not None:
+        assert num_episode <= len(
+            keys
+        ), f"num_episode: {num_episode} > len(keys): {len(keys)}"
+        keys = sorted(keys, key=lambda x: int(x.split("_")[-1]))
+        if single:
+            keys = keys[num_episode : num_episode + 1]
         else:
-            out[k] = inflate_h5_data(data[k])
-    return out
+            keys = keys[:num_episode]
+    ret = {key: load_content_from_h5_file(file[key]) for key in keys}
+    file.close()
+    # print("Loaded")
+    return ret
 
 
-def load_episode(data, episode_idx):
-    return inflate_h5_data(data[f"traj_{episode_idx}"])
-
-
-def pack_episode(episode_idx, *, filename, outdir, trajectory_length=20, pad_zeros=True):
+def pack_episode(
+    episode_idx,
+    *,
+    h5filename,
+    outdir,
+):
     logging.info(f"Packing episode {episode_idx}")
-    data = h5py.File(filename, "r")
 
-    episode = load_episode(data, episode_idx)
-    episode["trajectories"] = []
-
-    for i in range(len(episode["actions"])):
-        chunk = episode["actions"][i : i + trajectory_length]
-        if pad_zeros:
-            if len(chunk) < trajectory_length:
-                # pad with last zeroes # assuming delta
-                chunk = np.concatenate(
-                    [chunk, np.zeros((trajectory_length - len(chunk), chunk.shape[1]))]
-                )
-        else:
-            raise NotImplementedError("No padding")
-        episode["trajectories"].append(chunk)
-
-    del episode["actions"]
-    episode["trajectories"] = np.array(episode["trajectories"])
-
-    len_traj = episode["trajectories"].shape[0]
-    episode = tree_map(
-        lambda x: x[:len_traj], episode
-    )  # obs include last state without action
+    episode = load_episode_hdf5(h5filename, episode_idx, single=True)[f"traj_{episode_idx}"]
+    action_length = episode["actions"].shape[0]
 
     paths, leaves, treespec = tree_flatten_with_path(episode)
-    dc = dict(zip([".".join(elems) for elems in paths], leaves, strict=True))
+    cpaths = [".".join(elems) for elems in paths]
+    dc = dict(zip(cpaths, leaves, strict=True))
+
     np.savez(outdir / f"episode_{episode_idx}.npz", **dc)
 
-    return len_traj, treespec
+    return [episode_idx, action_length]
 
 
 def pack_task(filename, outname):
     logging.info(f"Packing task from {filename} to {outname}")
     json_data = load_json(str(filename).replace(".h5", ".json"))
 
-    # this is easily parallelizable
     num_episodes = len(json_data["episodes"])
 
     with ProcessPoolExecutor() as executor:
-        results = list(
+        action_lengths = list(
             tqdm(
                 executor.map(
                     partial(
                         pack_episode,
-                        filename=filename,
+                        h5filename=filename,
                         outdir=outname,
-                        trajectory_length=20,
-                        pad_zeros=True,
                     ),
                     range(num_episodes),
                 ),
@@ -93,14 +100,11 @@ def pack_task(filename, outname):
                 desc="Packing episodes",
             )
         )
+    # action_lengths = []
+    # for episode_idx in range(num_episodes):
+    #     action_lengths.append(pack_episode(episode_idx, h5filename=filename, outdir=outname))
 
-    traj_lengths, treespecs = zip(*results, strict=True)
-    traj_lengths = list(traj_lengths)
-    treespec = treespecs[0]  # assuming all episodes have the same treespec
-
-    np.save(outname / "traj_lengths.npy", np.array(traj_lengths))
-    with Path(outname / "treespec.pkl").open("wb") as f:
-        pickle.dump(treespec, f)
+    np.save(outname / "traj_lengths.npy", np.array(action_lengths))
 
 
 def main():
