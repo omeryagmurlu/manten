@@ -4,27 +4,52 @@ defaults:
   - /agent: lowdim_diffusion_policy
   - /datamodule: maniskill
 
-seed: 42
+project_name: manten_maniskill_${datamodule._task}
+
+_save_every_n_gs: 10000
+_detailed_metrics_every_n_gs: 2500
+_skip_first_n_gs: 0
+training:
+  num_global_steps: 100000
+  vis_metric_key: "pos_l2"
+  eval_train:
+    max_steps: 6
+  eval_test:
+    max_steps: 6
+  custom_eval:
+    every_n_global_steps: ${_detailed_metrics_every_n_gs}
+
+  # sanity_check: False
+  # log_train_timing: True
+  # resume_from_save: /home/i53/student/yagmurlu/code/manten/outputs/training/2024-12-24/18-59-50/accelerate/checkpoint_29
+
+_lr: 0.0001 # 1e-4
+_weight_decay: 0.000006
+seed: 542
+
+lr_scheduler:
+  name: cosine
+  num_warmup_steps: 500
+  num_training_steps: ${training.num_global_steps}
 
 datamodule:
-  _task: PegInsertionSide-v1
+  _task: PickCube-v1
   _pack_root: /home/i53/student/yagmurlu/code/manten/data/maniskill2/packed_demos
   _obs_horizon: 2
   _pred_horizon: 16
-  _obs_modalities: ["state_obs"] # ["pcd_obs", "rgb_obs", "state_obs"]
-  _batch_size: 128
-  # _num_workers: 4
+  _obs_mode: state
+  _control_mode: pd_ee_delta_pose
+  _batch_size: 1024
+  _train_target_iters: 1000
+  _num_workers: 8
+  # _load_count: 20
 
 agent:
   agent:
     obs_horizon: 2
     act_horizon: 8
     pred_horizon: 16
+    observation_shape: [42]
     noise_scheduler:
       num_train_timesteps: 100
     num_diffusion_iters: 100
-
-training:
-  vis_metric_key: "pos_l2"
-
-_lr: 0.0001 # 1e-4

@@ -1,48 +1,73 @@
-_batch_size: 1024
-_num_workers: 4
+_batch_size: ???
+_train_target_iters: ???
+_num_workers: 8
 
 _task: ???
 _pack_root: ???
 _obs_horizon: ???
 _pred_horizon: ???
-_obs_modalities: ??? # ["pcd_obs", "rgb_obs", "state_obs"]
+_obs_modalities: null # ["pcd_obs", "rgb_obs", "state_obs"]
+_obs_mode: ??? # "state", "pointcloud", "rgbd"
+_control_mode: ???
+_load_count: null
 
-datamodule:
-  _target_: manten.utils.dummy_datamodule.AutoTestDataModule
-  test_ratio: 0.05
-  shuffle_train: True
-  dataloader_fn:
+# I hate the following combination of omegaconf interpolations and YAML anchors, but it is what it is
+#
+# I will try to explain it as best as I can
+#
+# The dicts with ampersand (&) are yaml anchors, and their contents are copied
+# verbatim to the place where the anchor is referenced with an asterisk (*).
+# The expansion operator (<<:) expands the contents of the referenced anchor
+# into the current dict. So the keys are copied from the anchor to the destination, verbatim.
+#
+# This so far has nothing to do with omegaconf, it is just a plain YAML feature. You can't use overrides
+# defaults list etc with this, it is just a way to avoid repeating the same keys in the same file
+# over and over again.
+#
+# The omegaconf interpolations are the ${...} and ${....} etc. They are used to refer to the values
+# of the keys in the current config file. The number of dots is the number of levels you go up in the
+# config hierarchy. Since we copy the keys from the anchor verbatim, there is no need pay attention to the
+# levels of the keys in the anchor, we need to take the level of their destination into account.
+#
+# BUT: if you in any place invoke the __ keys (eg. serializing the whole cfg for wandb, which we do), then
+# the interpolation will be relative to that level and error out, so I had match the levels of the keys
+
+__0:
+  __: &dataloader_args
     _target_: torch.utils.data.DataLoader
     _partial_: True
+    pin_memory: True
+    # persistent_workers: True
     batch_size: ${..._batch_size}
     num_workers: ${..._num_workers}
-    pin_memory: True
     drop_last: True
-  dataset:
-    _target_: manten.data.dataset_maniskill.ManiSkillDataset
-    task: ${..._task}
-    pack_root: ${..._pack_root}
-    obs_horizon: ${..._obs_horizon}
-    pred_horizon: ${..._pred_horizon}
-    obs_modalities: ${..._obs_modalities}
-  # dataset:
-  #   _target_: torch.utils.data.ConcatDataset
-  #   datasets:
-  #     - _target_: manten.data.dataset_maniskill.ManiskillDataset
-  #       task: PegInsertionSide-v1
-  #       pack_root: ${..._pack_root}
-  #       obs_horizon: ${.._obs_horizon}
-  #       pred_horizon: ${.._pred_horizon}
-  #       obs_modalities: ${.._obs_modalities}
-  #     - _target_: manten.data.dataset_maniskill.ManiskillDataset
-  #       task:
-  #       pack_root: ${..._pack_root}
-  #       obs_horizon: ${.._obs_horizon}
-  #       pred_horizon: ${.._pred_horizon}
-  #       obs_modalities: ${.._obs_modalities}
-  #     - _target_: manten.data.dataset_maniskill.ManiskillDataset
-  #       task:
-  #       pack_root: ${..._pack_root}
-  #       obs_horizon: ${.._obs_horizon}
-  #       pred_horizon: ${.._pred_horizon}
-  #       obs_modalities: ${.._obs_modalities}
+
+__1:
+  __:
+    __: &dataset_args
+      _target_: manten.data.dataset_maniskill.ManiSkillDataset
+      test_ratio: 0.05
+      task: ${...._task}
+      pack_root: ${...._pack_root}
+      obs_horizon: ${...._obs_horizon}
+      pred_horizon: ${...._pred_horizon}
+      obs_modalities: ${...._obs_modalities}
+      obs_mode: ${...._obs_mode}
+      control_mode: ${...._control_mode}
+      load_count: ${...._load_count}
+
+datamodule:
+  _target_: manten.utils.dummy_datamodule.DummyDataModule
+  train_dataloader:
+    <<: *dataloader_args
+    dataset:
+      <<: *dataset_args
+      train: True
+      simulated_train_iterations:
+        - ${...batch_size}
+        - ${....._train_target_iters}
+  test_dataloader:
+    <<: *dataloader_args
+    dataset:
+      <<: *dataset_args
+      train: False

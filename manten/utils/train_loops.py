@@ -1,12 +1,16 @@
+import shutil
+from collections import deque
 from dataclasses import dataclass, field
+from pathlib import Path
 from typing import Protocol
 
 import torch
 from tabulate import tabulate
 
+from manten.utils.debug_utils import TrainTimer
 from manten.utils.logging import get_logger
 from manten.utils.progbar import progbar
-from manten.utils.utils_config import save_agent_config
+from manten.utils.utils_checkpointing import save_agent_config, save_model_to_safetensors
 from manten.utils.utils_decorators import with_state_dict
 
 logger = get_logger(__name__)
@@ -20,19 +24,26 @@ class TrainLoopsState:
     best_mean_train_epoch_loss: float = field(default=float("inf"))
 
 
+class EveryNConfig(Protocol):
+    every_n_epochs: int | None
+    skip_first_epochs: int | None
+    every_n_global_steps: int | None
+    skip_first_global_steps: int | None
+
+
 class TrainLoopsConfig(Protocol):
-    num_epochs: int
-    max_steps: int
     sanity_check: int
-    log_every_n_steps: int
-    save_every_n_epochs: int
     resume_from_save: str | None
-    validate_every_n_epochs: int
-    eval_test_every_n_epochs: int
-    eval_train_every_n_epochs: int
-    validate_ene_max_steps: int
-    eval_test_ene_max_steps: int
-    eval_train_ene_max_steps: int
+
+    num_epochs: int
+    num_global_steps: int
+    max_steps: int
+    log_every_n_steps: int
+
+    save: EveryNConfig
+    val: EveryNConfig
+    eval_test: EveryNConfig
+    eval_train: EveryNConfig
 
 
 class TrainLoops:
@@ -47,6 +58,7 @@ class TrainLoops:
         optimizer,
         lr_scheduler,
         log_aggregator,
+        ema,
         whole_cfg,
     ):
         self.cfg = cfg
@@ -57,6 +69,7 @@ class TrainLoops:
         self.optimizer = optimizer
         self.lr_scheduler = lr_scheduler
         self.log_aggregator = log_aggregator
+        self.ema = ema
         self.whole_cfg = whole_cfg  # this is a hack to save the agent config
 
         self.state = TrainLoopsState()
@@ -65,40 +78,45 @@ class TrainLoops:
         self.num_processes = accelerator.num_processes
         self.len_train_dl = len(train_dl)
 
+        self.log_train_timing = (
+            TrainTimer(accelerator=accelerator) if self.cfg.log_train_timing else None
+        )
+
     def begin_training(self):
         # Potentially load in the weights and states from a previous save
         if self.cfg.resume_from_save:
             self.resume_from_save(self.cfg.resume_from_save)
 
         logger.info("starting training")
-        # loop control variable self overwrites as it iterates, but that's what we want
-        to_epoch = self.cfg.num_epochs
-        starting_epoch = self.state.epoch
-        for self.state.epoch in range(starting_epoch, to_epoch):
+        to_epoch = self.cfg.num_epochs if self.cfg.num_epochs else float("inf")
+        to_global_step = (
+            self.cfg.num_global_steps if self.cfg.num_global_steps else float("inf")
+        )
+        while True:
+            if self.state.global_step >= to_global_step or self.state.epoch >= to_epoch:
+                break
+
             mean_epoch_loss, last_batch_loss = self.train_loop()
 
-            if self.every_n_epochs(
-                self.cfg.validate_every_n_epochs, self.cfg.skip_validate_first_n_epochs
-            ):
-                self.validation_loop()
+            self.trigger_validation()
+            if self.ema:
+                self.trigger_validation(use_ema=True)
 
-            if self.every_n_epochs(
-                self.cfg.eval_train_every_n_epochs, self.cfg.skip_eval_train_first_n_epochs
-            ):
-                self.evaluation_loop(
-                    self.train_dl, self.cfg.eval_train_ene_max_steps, "train"
-                )
-
-            if self.every_n_epochs(
-                self.cfg.eval_test_every_n_epochs, self.cfg.skip_eval_test_first_n_epochs
-            ):
-                self.evaluation_loop(self.test_dl, self.cfg.eval_test_ene_max_steps, "test")
-
-            if self.every_n_epochs(
-                self.cfg.save_every_n_epochs, self.cfg.skip_save_first_n_epochs
-            ):
+            if self.every_n_after_train(self.cfg.save):
                 self.save_checkpoint(mean_epoch_loss)
+
+            self.state.epoch += 1
         logger.info("training finished, trained for %d epochs", self.state.epoch)
+
+    def trigger_validation(self, **kwa):
+        if self.every_n_after_train(self.cfg.val):
+            self.validation_loop(**kwa)
+
+        if self.every_n_after_train(self.cfg.eval_train):
+            self.evaluation_loop(self.train_dl, self.cfg.eval_train.max_steps, "train", **kwa)
+
+        if self.every_n_after_train(self.cfg.eval_test):
+            self.evaluation_loop(self.test_dl, self.cfg.eval_test.max_steps, "test", **kwa)
 
     def begin_sanity_check(self):
         if bool(self.cfg.sanity_check):
@@ -109,12 +127,14 @@ class TrainLoops:
     def train_loop(self) -> tuple[float, float]:
         self.log_aggregator.reset()
         self.agent.train()
-        train_epoch_losses = []
+        train_epoch_losses = deque()
+        local_log_every_n_steps = max(self.cfg.log_every_n_steps // 10, 1)
         for step, batch in enumerate(  # train_dl syncs rnd seed across processes
             progress := progbar(
                 self.train_dl,
                 desc=f"epoch {self.state.epoch}",
                 total=min(len(self.train_dl), self.cfg.max_steps),
+                mininterval=1,
             )
         ):
             if step == self.cfg.max_steps:
@@ -124,12 +144,13 @@ class TrainLoops:
             metric, loss = self.train_step(batch)
 
             train_epoch_losses.append(loss := loss.detach().item())
-            overview_logs = {
-                "loss": loss,
-                "lr": self.lr_scheduler.get_last_lr()[0],
-                "timing/global_step": self.state.global_step,
-            }
-            progress.set_postfix(**overview_logs)
+            if step % local_log_every_n_steps == 0:
+                overview_logs = {
+                    "loss": loss,
+                    "lr": self.lr_scheduler.get_last_lr()[0],
+                    "timing/global_step": self.state.global_step,
+                }
+                progress.set_postfix(**overview_logs)
 
             # TODO: for now just log main process metrics for performance reasons
             # accelerate already has @on_main_process deco on trackers, so this here
@@ -153,45 +174,51 @@ class TrainLoops:
 
         return sum(train_epoch_losses) / len(train_epoch_losses), loss
 
-    def validation_loop(self) -> None:
+    def validation_loop(self, *, use_ema=False) -> None:
+        agent = self.agent if not use_ema else self.ema.agent
+        proc_name = f"validate{'-ema' if use_ema else ''}"
+
         self.log_aggregator.reset()
-        self.agent.eval()
+        agent.eval()
         for step, batch in enumerate(
             progress := progbar(
                 self.test_dl,
-                total=min(len(self.test_dl), self.cfg.validate_ene_max_steps),
-                desc=f"epoch {self.state.epoch} (validate)",
+                total=min(len(self.test_dl), self.cfg.val.max_steps),
+                desc=f"epoch {self.state.epoch} ({proc_name})",
                 leave=False,
             )
         ):
-            if step == self.cfg.validate_ene_max_steps:
+            if step == self.cfg.val.max_steps:
                 progress.close()
                 break
 
-            metric = self.validation_step(batch)
+            metric = self.validation_step(batch, agent)
 
             progress.set_postfix(**metric.summary_metrics())
             self.log_aggregator.log(metric)
 
-        logger.info("validate@epoch:%d", self.state.epoch)
+        logger.info("%s@epoch:%d", proc_name, self.state.epoch)
 
         self.log_aggregator.all_gather()
         if self.accelerator.is_main_process:
             self.accelerator.log(
-                validate_logs := self.log_aggregator.collate("validate/"),
+                validate_logs := self.log_aggregator.collate(f"{proc_name}/"),
                 step=self.state.global_step,
             )
             print(tabulate(validate_logs.items()))
         self.log_aggregator.reset()
 
-    def evaluation_loop(self, dataloader, max_steps, split) -> None:
+    def evaluation_loop(self, dataloader, max_steps, split, *, use_ema=False) -> None:
+        agent = self.agent if not use_ema else self.ema.agent
+        proc_name = f"eval-{split}{'-ema' if use_ema else ''}"
+
         self.log_aggregator.reset()
-        self.agent.eval()
+        agent.eval()
         for step, batch in enumerate(
             progress := progbar(
                 dataloader,
                 total=min(len(dataloader), max_steps),
-                desc=f"epoch {self.state.epoch} (eval:{split})",
+                desc=f"epoch {self.state.epoch} ({proc_name})",
                 leave=False,
             )
         ):
@@ -199,16 +226,16 @@ class TrainLoops:
                 progress.close()
                 break
 
-            metric, trajectory = self.evaluation_step(batch)
+            metric, trajectory = self.evaluation_step(batch, agent)
 
             progress.set_postfix(**metric.summary_metrics())
             self.log_aggregator.log(metric)
 
-        logger.info("evaluation:%s@epoch:%d", split, self.state.epoch)
+        logger.info("%s@epoch:%d", proc_name, self.state.epoch)
 
         self.log_aggregator.all_gather()
         if self.cfg.vis_metric_key is not None and self.accelerator.is_main_process:
-            eval_logs = self.log_aggregator.collate(f"eval-{split}/", reset=False)
+            eval_logs = self.log_aggregator.collate(f"{proc_name}/", reset=False)
             print(tabulate(eval_logs.items()))
             eval_logs.update(self.log_aggregator.create_vis_logs(self.cfg.vis_metric_key))
             self.accelerator.log(eval_logs, step=self.state.global_step)
@@ -227,7 +254,7 @@ class TrainLoops:
                 progress.close()
                 break
 
-            metric = self.validation_step(batch)
+            metric = self.validation_step(batch, self.agent)
             progress.set_postfix(**metric.summary_metrics())
 
         self.agent.eval()
@@ -242,32 +269,48 @@ class TrainLoops:
                 progress.close()
                 break
 
-            metric, trajectory = self.evaluation_step(batch)
+            metric, trajectory = self.evaluation_step(batch, self.agent)
             progress.set_postfix(**metric.summary_metrics())
 
     def train_step(self, batch):
+        if self.log_train_timing:
+            self.log_train_timing.before_forward()
+
         with self.accelerator.accumulate(self.agent):
             metric = self.agent("train", batch)
             loss = metric.loss()
+
+            if self.log_train_timing:
+                self.log_train_timing.after_forward()
 
             self.accelerator.backward(loss)
             if self.accelerator.sync_gradients:
                 self.accelerator.clip_grad_norm_(self.agent.parameters(), 1.0)
 
+            if self.log_train_timing:
+                self.log_train_timing.after_backward()
+
             self.optimizer.step()
             self.lr_scheduler.step()
             self.optimizer.zero_grad()
+            if self.ema:
+                self.ema.manager.step(self.agent.parameters())
+
+        if self.log_train_timing:
+            self.log_train_timing.before_step_end()
 
         return metric, loss
 
-    def validation_step(self, batch):
+    @staticmethod
+    def validation_step(batch, agent):
         with torch.inference_mode():
-            metric = self.agent("validate", batch)
+            metric = agent("validate", batch)
         return metric
 
-    def evaluation_step(self, batch):
+    @staticmethod
+    def evaluation_step(batch, agent):
         with torch.inference_mode():
-            metric, trajectory = self.agent("eval", batch, compare_gt=True)
+            metric, trajectory = agent("eval", batch, compare_gt=True)
         return metric, trajectory
 
     def resume_from_save(self, from_str):
@@ -284,34 +327,84 @@ class TrainLoops:
 
     def save_checkpoint(self, mean_epoch_loss):
         self.accelerator.wait_for_everyone()
+
+        resume_path = f"{self.accelerator.project_dir}/resume"
         checkpoint_path = f"{self.accelerator.project_dir}/checkpoint_{self.state.epoch}"
-        self.accelerator.save_state(checkpoint_path)
-        self.save_agent_config(checkpoint_path)
-        logger.info("checkpoint@epoch:%d saved to %s", self.state.epoch, checkpoint_path)
+        last_checkpoint_path = f"{self.accelerator.project_dir}/last_checkpoint"
+        best_checkpoint_path = f"{self.accelerator.project_dir}/best_checkpoint"
 
-        if mean_epoch_loss < self.state.best_mean_train_epoch_loss:
-            self.state.best_mean_train_epoch_loss = mean_epoch_loss
-            best_checkpoint_path = f"{self.accelerator.project_dir}/best_checkpoint"
-            self.accelerator.save_state(best_checkpoint_path)
-            self.save_agent_config(best_checkpoint_path)
-            logger.info(
-                "best checkpoint@epoch:%d with loss %.4f saved to %s",
-                self.state.epoch,
-                self.state.best_mean_train_epoch_loss,
-                best_checkpoint_path,
+        # save resume
+        shutil.rmtree(resume_path, ignore_errors=True)
+        logger.info("resume states @epoch:%d saving to %s", self.state.epoch, resume_path)
+        self.accelerator.save_state(resume_path)
+
+        # save checkpoint
+        if self.accelerator.is_main_process:
+            Path(checkpoint_path).mkdir(parents=True)
+        save_model_to_safetensors(
+            self.accelerator, self.agent, f"{checkpoint_path}/model.safetensors"
+        )
+        if self.ema:
+            save_model_to_safetensors(
+                self.accelerator, self.ema.agent, f"{checkpoint_path}/ema_model.safetensors"
             )
+        if self.accelerator.is_main_process:
+            # keep non-accelerate ops on main process only
+            save_agent_config(checkpoint_path, self.whole_cfg.agent.agent)
 
-    def save_agent_config(self, checkpoint_path):
-        save_agent_config(checkpoint_path, self.whole_cfg.agent.agent)
+            Path(last_checkpoint_path).unlink(missing_ok=True)
+            Path(last_checkpoint_path).symlink_to(checkpoint_path)
+            logger.info("checkpoint@epoch:%d saved to %s", self.state.epoch, checkpoint_path)
 
-    def every_n_epochs(self, n, skip_first=0):
-        if self.state.epoch < skip_first:
+            if mean_epoch_loss < self.state.best_mean_train_epoch_loss:
+                self.state.best_mean_train_epoch_loss = mean_epoch_loss
+                Path(best_checkpoint_path).unlink(missing_ok=True)
+                Path(best_checkpoint_path).symlink_to(checkpoint_path)
+                logger.info(
+                    "best checkpoint@epoch:%d with loss %.4f saved to %s",
+                    self.state.epoch,
+                    self.state.best_mean_train_epoch_loss,
+                    best_checkpoint_path,
+                )
+
+    def every_n_after_train(self, every_n_conf: EveryNConfig):
+        if not every_n_conf:
             return False
 
-        return bool(n) and (
-            (self.state.epoch + 1) % n == 0
+        if "every_n_epochs" in every_n_conf:
+            return self.every_n_epochs_after_train(**every_n_conf)
+        if "every_n_global_steps" in every_n_conf:
+            return self.every_n_global_steps_after_train(**every_n_conf)
+        return False
+
+    def every_n_epochs_after_train(self, *, every_n_epochs, skip_first_epochs=0, **_):
+        if self.state.epoch < skip_first_epochs:
+            return False
+
+        return (
+            (self.state.epoch + 1) % every_n_epochs == 0
             or (self.state.epoch + 1) == self.cfg.num_epochs  # or last epoch
         )
+
+    def every_n_global_steps_after_train(
+        self, *, every_n_global_steps, skip_first_global_steps=0, **_
+    ):
+        if self.state.global_step < skip_first_global_steps:
+            return False
+
+        step_lower_bound = self.state.global_step - self.len_train_dl
+        step_upper_bound = self.state.global_step
+        if step_lower_bound < 0:
+            raise ValueError(
+                "step_lower_bound is negative, which cannot happen as long as we train first"
+            )
+        lower_quotient = step_lower_bound // every_n_global_steps
+        upper_quotient = step_upper_bound // every_n_global_steps
+
+        if lower_quotient != upper_quotient:  # we crossed a multiple of n during training
+            return True
+
+        return self.state.epoch + 1 == self.cfg.num_epochs
 
     def every_n_global_steps(self, n, *, curr_train_step=0):
         return bool(n) and (

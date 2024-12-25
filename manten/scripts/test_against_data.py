@@ -8,7 +8,7 @@ from tabulate import tabulate
 from manten.utils.log_aggregator import LogAggregator
 from manten.utils.logging import get_logger
 from manten.utils.progbar import progbar
-from manten.utils.utils_config import load_agent
+from manten.utils.utils_checkpointing import load_agent
 from manten.utils.utils_root import root
 
 logger = get_logger(__name__)

@@ -18,3 +18,7 @@ accelerator_init_trackers:
 #   job_logging:
 #     root:
 #       level: DEBUG
+
+hydra:
+  run:
+    dir: ./outputs/debug/${now:%Y-%m-%d}/${now:%H-%M-%S}

@@ -12,29 +12,37 @@ project_name: manten
 seed: ???
 deterministic: False
 
-_detailed_metrics_every_n_epochs: 5
-_save_every_n_epochs: 20
-_skip_first_n_epochs: 10
+_save_every_n_gs: 5000
+_detailed_metrics_every_n_gs: 2500
+_skip_first_n_gs: 50000
 training:
-  num_epochs: 80
-  max_steps: .inf
   sanity_check: 5
+  num_epochs: .inf
+  num_global_steps: 600000
+  max_steps: .inf
   log_every_n_steps: 100
-  save_every_n_epochs: ${_save_every_n_epochs}
-  validate_every_n_epochs: ${_detailed_metrics_every_n_epochs}
-  eval_train_every_n_epochs: ${_detailed_metrics_every_n_epochs}
-  eval_test_every_n_epochs: ${_detailed_metrics_every_n_epochs}
-  validate_ene_max_steps: .inf
-  eval_train_ene_max_steps: .inf
-  eval_test_ene_max_steps: .inf
-  skip_validate_first_n_epochs: ${_skip_first_n_epochs}
-  skip_eval_train_first_n_epochs: ${_skip_first_n_epochs}
-  skip_eval_test_first_n_epochs: ${_skip_first_n_epochs}
-  skip_save_first_n_epochs: ${_skip_first_n_epochs}
+  save:
+    every_n_global_steps: ${_save_every_n_gs}
+    skip_first_global_steps: ${_skip_first_n_gs}
+  val:
+    every_n_global_steps: ${_detailed_metrics_every_n_gs}
+    skip_first_global_steps: ${_skip_first_n_gs}
+    max_steps: .inf
+  eval_train: null
+  eval_test:
+    every_n_global_steps: ${_detailed_metrics_every_n_gs}
+    skip_first_global_steps: ${_skip_first_n_gs}
+    max_steps: .inf
   resume_from_save: null
   vis_metric_key: null
   log_aggregator:
     _target_: manten.utils.log_aggregator.LogAggregator
+  log_train_timing: False
+  custom_eval: null
+  ema:
+    _target_: diffusers.training_utils.EMAModel
+    power: 0.75
+    use_ema_warmup: True
 
 accelerator:
   gradient_accumulation_steps: 1
@@ -47,8 +55,8 @@ accelerator_init_trackers:
       entity: "omeryagmurlu"
 
 # _lr: 0.0003 # 3e-4
-_lr: 0.001 # 1e-3
-_weight_decay: 0.0003
+_lr: ??? #0.001 # 1e-3
+_weight_decay: ??? #0.0003 #0.000006
 optimizer_configurator:
   _target_: manten.utils.optimizer_configurator.OptimizerConfigurator
   default_params_config:
@@ -67,5 +75,9 @@ optimizer:
   lr: ${_lr}
   weight_decay: ${_weight_decay}
 lr_scheduler:
-  _target_: torch.optim.lr_scheduler.ConstantLR
-  factor: 1.0
+  _target_: diffusers.optimization.get_scheduler
+  name: constant
+
+hydra:
+  run:
+    dir: ./outputs/training/${project_name}/${now:%Y-%m-%d}/${now:%H-%M-%S}

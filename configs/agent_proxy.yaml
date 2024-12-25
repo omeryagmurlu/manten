@@ -6,6 +6,11 @@ defaults:
   - optional local: local
   - debug: null
 
+agent_wrapper:
+  _target_: manten_evaluation.calvin.agent_wrappers.tdda.TDDAAgentWrapper
+  text_encoder: clip
+  text_max_length: 16 # 53
+
 seed: 142
 deterministic: False
 device: cuda

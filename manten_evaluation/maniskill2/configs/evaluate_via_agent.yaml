@@ -1,0 +1,39 @@
+defaults:
+  - _self_
+  - optional local: local
+
+agent_creation:
+  train_folder: /home/i53/student/yagmurlu/code/manten/outputs/training/manten_maniskill_PickCube-v1/2024-12-24/20-45-25/accelerate
+  checkpoint: best_checkpoint
+  agent_override: {}
+
+_obs_mode: state
+
+agent_wrapper:
+  _target_: manten_evaluation.maniskill2.agent_wrappers.lddp.LDDPAgentWrapper
+  _partial_: True
+  obs_horizon: 2
+  obs_mode: ${_obs_mode}
+
+env_creation:
+  env_id: PickCube-v1
+  num_envs: 10
+  sim_backend: cpu
+  env_kwargs:
+    control_mode: pd_ee_delta_pose
+    reward_mode: sparse
+    obs_mode: ${_obs_mode}
+    render_mode: rgb_array # 'rgb_array' or 'human'
+    max_episode_steps: 150
+  save_video: True
+  wrappers: null
+
+seed: 142
+deterministic: False
+device: cuda
+
+num_eval_episodes: 30
+
+hydra:
+  run:
+    dir: ./outputs/maniskill-eval/${now:%Y-%m-%d}/${now:%H-%M-%S}

@@ -1,6 +1,7 @@
 import logging
 import multiprocessing
 import os
+from time import time
 
 from omegaconf import OmegaConf
 
@@ -45,3 +46,41 @@ class DebugUtils:
 
         original_repr = torch.Tensor.__repr__
         torch.Tensor.__repr__ = custom_repr
+
+
+class TrainTimer:
+    def __init__(self, accelerator):
+        self.accelerator = accelerator
+        self.end_time = time()
+
+    def before_forward(self):
+        self.data_load_duration = (time() - self.end_time) * 1e3
+        self._sync()
+        self.pre_forward_time = time()
+
+    def after_forward(self):
+        self._sync()
+        self.post_forward_time = time()
+
+    def after_backward(self):
+        self._sync()
+        self.post_backward_time = time()
+
+    def before_step_end(self):
+        self._sync()
+        forward_duration = (self.post_forward_time - self.pre_forward_time) * 1e3
+        backward_duration = (self.post_backward_time - self.post_forward_time) * 1e3
+        logger.info(
+            "forward time: %.2fms, backward time: %.2fms, data load time: %.2fms",
+            forward_duration,
+            backward_duration,
+            self.data_load_duration,
+        )
+
+        self.end_time = time()
+
+    def _sync(self):
+        import torch
+
+        self.accelerator.wait_for_everyone()
+        torch.cuda.synchronize()

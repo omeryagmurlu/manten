@@ -3,7 +3,7 @@ import torch
 
 from manten.agents.base_agent import BaseAgent
 from manten.agents.lowdim_diffusion_policy.conditional_unet1d import ConditionalUnet1D
-from manten.metrics.dummy_metric import PosTrajMetric
+from manten.metrics.dummy_metric import PosTrajMetric, PosTrajStats
 
 
 class LowdimDiffusionPolicyAgent(BaseAgent):
@@ -113,6 +113,12 @@ class LowdimDiffusionPolicyAgent(BaseAgent):
         obs_seq = batch["observations"]["state_obs"]
         action = self.get_action(obs_seq)
 
-        metric = PosTrajMetric()
-        metric.feed(ground=batch["actions"][..., : self.act_horizon, :], prediction=action)
+        if "actions" in batch:
+            metric = PosTrajMetric()
+            metric.feed(
+                ground=batch["actions"][..., : self.act_horizon, :], prediction=action
+            )
+        else:
+            metric = PosTrajStats()
+            metric.feed(stats=action)
         return metric, action
