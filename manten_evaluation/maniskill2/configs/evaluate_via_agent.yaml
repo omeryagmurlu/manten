@@ -2,10 +2,12 @@ defaults:
   - _self_
   - optional local: local
 
+  - override hydra/hydra_logging: colorlog
+  - override hydra/job_logging: colorlog
+
 agent_creation:
-  train_folder: /home/i53/student/yagmurlu/code/manten/outputs/training/manten_maniskill_PickCube-v1/2024-12-24/20-45-25/accelerate
-  checkpoint: best_checkpoint
-  agent_override: {}
+  train_folder: /home/i53/student/yagmurlu/code/manten/outputs/training/manten_maniskill_PickCube-v1/2024-12-25/03-51-04/accelerate
+  # use_ema: True
 
 _obs_mode: state
 
@@ -28,7 +30,7 @@ env_creation:
   save_video: True
   wrappers: null
 
-seed: 142
+seed: 542
 deterministic: False
 device: cuda
 

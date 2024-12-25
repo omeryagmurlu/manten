@@ -8,7 +8,7 @@ from manten_evaluation.maniskill2.utils_maniskill_common import process_observat
 
 
 class LDDPAgentWrapper:
-    def __init__(self, *, agent, obs_horizon, obs_mode, device):
+    def __init__(self, *, agent, obs_horizon, obs_mode, device="cuda"):
         self.__agent = agent
         self.__obs_horizon = obs_horizon
         self.__obs_mode = obs_mode
@@ -41,7 +41,6 @@ class LDDPAgentWrapper:
         )
 
     def __obs_dict(self, obs):
-        # may need to put this in a loop for frame stacking if dimensions don't play good with the prev
         obs_sing = process_observation_from_raw(obs, obs_mode=self.__obs_mode)
         obs_hist = self.__add_to_obs_stack_and_get_obs_hist(obs_sing)
 

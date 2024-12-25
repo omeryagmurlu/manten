@@ -5,6 +5,7 @@ from pathlib import Path
 from typing import Protocol
 
 import torch
+from accelerate import Accelerator
 from tabulate import tabulate
 
 from manten.utils.debug_utils import TrainTimer
@@ -51,13 +52,14 @@ class TrainLoops:
         self,
         cfg: TrainLoopsConfig,
         *,
-        accelerator,
+        accelerator: Accelerator,
         agent,
         train_dl,
         test_dl,
         optimizer,
         lr_scheduler,
         log_aggregator,
+        custom_evaluator,
         ema,
         whole_cfg,
     ):
@@ -69,6 +71,7 @@ class TrainLoops:
         self.optimizer = optimizer
         self.lr_scheduler = lr_scheduler
         self.log_aggregator = log_aggregator
+        self.custom_evaluator = custom_evaluator
         self.ema = ema
         self.whole_cfg = whole_cfg  # this is a hack to save the agent config
 
@@ -76,7 +79,7 @@ class TrainLoops:
         accelerator.register_for_checkpointing(self.state)
 
         self.num_processes = accelerator.num_processes
-        self.len_train_dl = len(train_dl)
+        self.len_train_loop = min(len(train_dl), cfg.max_steps)
 
         self.log_train_timing = (
             TrainTimer(accelerator=accelerator) if self.cfg.log_train_timing else None
@@ -98,9 +101,11 @@ class TrainLoops:
 
             mean_epoch_loss, last_batch_loss = self.train_loop()
 
-            self.trigger_validation()
-            if self.ema:
-                self.trigger_validation(use_ema=True)
+            with torch.inference_mode(), torch.no_grad():
+                self.agent.eval()
+                self.trigger_validation()
+                if self.ema:
+                    self.trigger_validation(use_ema=True)
 
             if self.every_n_after_train(self.cfg.save):
                 self.save_checkpoint(mean_epoch_loss)
@@ -118,6 +123,9 @@ class TrainLoops:
         if self.every_n_after_train(self.cfg.eval_test):
             self.evaluation_loop(self.test_dl, self.cfg.eval_test.max_steps, "test", **kwa)
 
+        if self.every_n_after_train(self.cfg.custom_eval):
+            self.custom_evaluation(**kwa)
+
     def begin_sanity_check(self):
         if bool(self.cfg.sanity_check):
             logger.info("starting sanity check")
@@ -133,7 +141,7 @@ class TrainLoops:
             progress := progbar(
                 self.train_dl,
                 desc=f"epoch {self.state.epoch}",
-                total=min(len(self.train_dl), self.cfg.max_steps),
+                total=self.len_train_loop,
                 mininterval=1,
             )
         ):
@@ -240,6 +248,41 @@ class TrainLoops:
             eval_logs.update(self.log_aggregator.create_vis_logs(self.cfg.vis_metric_key))
             self.accelerator.log(eval_logs, step=self.state.global_step)
         self.log_aggregator.reset()
+
+    def custom_evaluation(self, *, use_ema=False) -> None:
+        if not (
+            self.custom_evaluator
+            and hasattr(self.cfg, "custom_eval")
+            and self.cfg.custom_eval
+        ):
+            return
+
+        self.accelerator.wait_for_everyone()
+        if self.accelerator.is_main_process:
+            logger.info("custom evaluation@epoch:%d", self.state.epoch)
+
+            if callable(self.custom_evaluator):
+                custom_eval = self.custom_evaluator(
+                    output_dir=f"{self.accelerator.project_dir}/custom-eval/epoch-{self.state.epoch}{'-ema' if use_ema else ''}",
+                )
+            else:
+                custom_eval = self.custom_evaluator
+            proc_name = f"custom_eval-{custom_eval.eval_name}"
+
+            with torch.inference_mode(), torch.no_grad():  # just double checking lol
+                agent = self.agent if not use_ema else self.ema.agent
+                agent.eval()
+                agent = self.accelerator.unwrap_model(agent)
+                agent.eval()
+                custom_eval_logs = custom_eval.evaluate(agent)
+
+            custom_eval_logs = {
+                f"{proc_name}/{k}-mean": v.mean() for k, v in custom_eval_logs.items()
+            }
+            self.accelerator.log(custom_eval_logs, step=self.state.global_step)
+            print(tabulate(custom_eval_logs.items()))
+
+        self.accelerator.wait_for_everyone()
 
     def sanity_check_loop(self):
         self.agent.eval()
@@ -392,7 +435,7 @@ class TrainLoops:
         if self.state.global_step < skip_first_global_steps:
             return False
 
-        step_lower_bound = self.state.global_step - self.len_train_dl
+        step_lower_bound = self.state.global_step - self.len_train_loop
         step_upper_bound = self.state.global_step
         if step_lower_bound < 0:
             raise ValueError(
@@ -409,5 +452,5 @@ class TrainLoops:
     def every_n_global_steps(self, n, *, curr_train_step=0):
         return bool(n) and (
             (self.state.global_step + 1) % n == 0
-            or (curr_train_step + 1) == self.len_train_dl  # or end of epoch
+            or (curr_train_step + 1) == self.len_train_loop  # or end of epoch
         )

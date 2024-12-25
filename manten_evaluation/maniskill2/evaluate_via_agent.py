@@ -1,6 +1,7 @@
 from logging import getLogger
 
 import hydra
+import numpy as np
 
 from manten_evaluation.maniskill2.utils_evaluation import evaluate_via_agent, make_eval_envs
 
@@ -57,7 +58,9 @@ class ManiskillEvaluation:
             progress_bar=self.progress_bar,
         )
 
-        return outputs
+        envs.close()
+
+        return {k: np.array(v) for k, v in outputs.items()}
 
     @property
     def eval_name(self):
@@ -66,7 +69,6 @@ class ManiskillEvaluation:
 
 @hydra.main(config_path="configs", config_name="evaluate_via_agent")
 def main(cfg):
-    import numpy as np
     import torch
     from accelerate.utils import set_seed
     from omegaconf import OmegaConf
@@ -81,11 +83,9 @@ def main(cfg):
 
     output_dir = hydra.core.hydra_config.HydraConfig.get().runtime.output_dir
 
+    agent_creation = OmegaConf.to_object(cfg.agent_creation)
     agent = load_agent(
-        cfg.agent_creation.train_folder,
-        cfg.agent_creation.checkpoint,
-        cfg.agent_creation.agent_override,
-        no_checkpoint_mode="best",
+        **agent_creation,
         device=cfg.device,
     )
     agent.eval()
@@ -105,7 +105,7 @@ def main(cfg):
 
     logger.info("Evaluating on %s", evaluator.eval_name)
     results = evaluator.evaluate(agent)
-    results = {k: np.array(v).mean() for k, v in results.items()}
+    results = {f"{k}-mean": v.mean() for k, v in results.items()}
     print(tabulate(results.items()))
 
 

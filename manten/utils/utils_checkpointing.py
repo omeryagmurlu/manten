@@ -23,29 +23,38 @@ def save_model_to_safetensors(accelerator, model, path):
 
 def load_agent(
     train_folder: str,
-    checkpoint: str | None,
-    agent_override: dict | None,
-    no_checkpoint_mode="last",
+    *,
+    mode="last",
+    checkpoint: str | None = None,
+    agent_override: dict | None = None,
     device=None,
+    use_ema=False,
 ):
     if checkpoint is None:
-        if no_checkpoint_mode == "last":
+        if mode == "last":
             checkpoint = "last_checkpoint"
-        elif no_checkpoint_mode == "best":
+        elif mode == "best":
             checkpoint = "best_checkpoint"
+        elif mode == "resume":
+            raise ValueError("can't load checkpoints within resume, use other checkpoints")
         else:
-            raise ValueError(f"no_checkpoint_mode {no_checkpoint_mode} not recognized")
+            raise ValueError(f"mode {mode} not recognized")
 
     file_str = f"{train_folder}/{checkpoint}/%s"
+
+    if use_ema:
+        model_filename = file_str % "ema_model.safetensors"
+    else:
+        model_filename = file_str % "model.safetensors"
 
     agent_cfg = OmegaConf.load(file_str % "agent_config.yaml")
     if agent_override is not None:
         agent_cfg = OmegaConf.merge(agent_cfg, agent_override)
+
     agent = hydra.utils.instantiate(agent_cfg)
     if device is not None:
         agent.to(device)
-
-    load_model_from_safetensors(agent, file_str % "model.safetensors", device=device)
+    load_model_from_safetensors(agent, model_filename, device=device)
 
     return agent
 

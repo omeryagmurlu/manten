@@ -21,7 +21,9 @@ training:
     every_n_epochs: 1
     skip_first_epochs: 0
     max_steps: 2
-
+  custom_eval:
+    every_n_epochs: 1
+    skip_first_epochs: 0
   save:
     every_n_epochs: 3
     skip_first_epochs: 0

@@ -254,7 +254,7 @@ class Agent(nn.Module):
         with torch.no_grad():
             obs_cond = obs_seq.flatten(start_dim=1)  # (B, obs_horizon * obs_dim)
 
-            # initialize action from Gaussian noise
+            # initialize ac`tion from Gaussian noise
             noisy_action_seq = torch.randn(
                 (B, self.pred_horizon, self.act_dim), device=obs_seq.device
             )

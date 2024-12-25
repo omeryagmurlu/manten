@@ -6,7 +6,7 @@ from manten.utils.utils_root import root
 logger = get_logger(__name__)
 
 
-def setup(cfg):
+def setup(cfg):  # noqa: PLR0915
     import os
 
     import torch
@@ -88,6 +88,11 @@ def setup(cfg):
     else:
         ema = None
 
+    if hasattr(cfg, "custom_evaluator") and cfg.custom_evaluator is not None:
+        custom_evaluator = hydra.utils.instantiate(cfg.custom_evaluator)
+    else:
+        custom_evaluator = None
+
     loops = TrainLoops(
         cfg.training,
         accelerator=accelerator,
@@ -97,6 +102,7 @@ def setup(cfg):
         optimizer=optimizer,
         lr_scheduler=lr_scheduler,
         log_aggregator=hydra.utils.instantiate(cfg.training.log_aggregator),
+        custom_evaluator=custom_evaluator,
         ema=ema,
         whole_cfg=cfg,
     )
