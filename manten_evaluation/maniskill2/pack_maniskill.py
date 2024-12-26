@@ -11,7 +11,9 @@ import h5py
 import numpy as np
 from tqdm import tqdm
 
-from manten_evaluation.maniskill2.utils_maniskill_common import process_observation_from_raw
+from manten_evaluation.maniskill2.lib.utils_maniskill_common import (
+    process_observation_from_raw,
+)
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s")
 

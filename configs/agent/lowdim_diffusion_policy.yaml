@@ -3,14 +3,15 @@ agent:
   _target_: manten.agents.lowdim_diffusion_policy.agent.LowdimDiffusionPolicyAgent
   metric:
     _target_: manten.metrics.dummy_metric.MSELossDummyMetric
-  obs_horizon: ???
   act_horizon: ???
-  pred_horizon: ??? # 16->8 leads to worse performance, maybe it is like generate a half image; 16->32, improvement is very marginal
-  act_dim: 7
+  # # These can be set from dataset info
+  # obs_horizon: ???
+  # pred_horizon: ??? # 16->8 leads to worse performance, maybe it is like generate a half image; 16->32, improvement is very marginal
+  # act_dim: 7
+  # observation_shape: ??? # [42]
   diffusion_step_embed_dim: 64
   unet_dims: [64, 128, 256] # default setting is about ~4.5M params
   n_groups: 8 # jigu says it is better to let each group have at least 8 channels; it seems 4 and 8 are simila
-  observation_shape: ??? # [42]
   noise_scheduler:
     _target_: diffusers.schedulers.DDPMScheduler
     num_train_timesteps: ???
@@ -18,3 +19,8 @@ agent:
     clip_sample: True
     prediction_type: epsilon
   num_diffusion_iters: ???
+  action_scaler:
+    _target_: manten.agents.utils.normalization.MinMaxScaler
+    _partial_: true
+    min_value: -0.75 # so that it maybe learns to generalize???
+    max_value: 0.75

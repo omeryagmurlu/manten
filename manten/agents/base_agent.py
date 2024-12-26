@@ -11,9 +11,10 @@ class BaseAgent(nn.Module, ABC):
     Base class for all training agents
     """
 
-    def __init__(self, metric: BaseMetric):
+    def __init__(self, metric: BaseMetric, dataset_info: dict | None = None):
         super().__init__()
         self.metric = metric
+        self.dataset_info = dataset_info
 
     def reset(self):
         self.metric.reset()

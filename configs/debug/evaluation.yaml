@@ -1,0 +1,9 @@
+# @package _global_
+
+debug: # order matters here
+  _target_: manten.utils.debug_utils.DebugUtils
+  # env_set:
+  #   # this is not working via hydra, set manually in shell if you have problems
+  #   TORCH_DISTRIBUTED_DEBUG: DETAIL
+  #   ACCELERATE_DEBUG_MODE: 1
+  monkeypatch_tensor_shape: True

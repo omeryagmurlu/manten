@@ -1,11 +1,14 @@
 from collections import defaultdict
 
 import gymnasium as gym
-import mani_skill.envs  # noqa: F401 # loads up the envs
+import mani_skill.envs  # noqa: F401 # register envs
+import numpy as np
 from mani_skill.utils import gym_utils
 from mani_skill.utils.wrappers import CPUGymWrapper, RecordEpisode
 from mani_skill.vector.wrappers.gymnasium import ManiSkillVectorEnv
 from tqdm import tqdm
+
+from manten_evaluation.maniskill2.lib.utils_wrappers import ActionExecutor
 
 
 def make_eval_envs(  # noqa: C901
@@ -53,8 +56,6 @@ def make_eval_envs(  # noqa: C901
                         output_dir=video_dir,
                         save_trajectory=False,
                         info_on_video=True,
-                        source_type="diffusion_policy",
-                        source_desc="diffusion_policy evaluation rollout",
                     )
                 env.action_space.seed(seed)
                 env.observation_space.seed(seed)
@@ -90,33 +91,30 @@ def make_eval_envs(  # noqa: C901
                 output_dir=video_dir,
                 save_trajectory=False,
                 save_video=True,
-                source_type="diffusion_policy",
-                source_desc="diffusion_policy evaluation rollout",
                 max_steps_per_video=max_episode_steps,
             )
         env = ManiSkillVectorEnv(env, ignore_terminations=True, record_metrics=True)
     return env
 
 
-def evaluate_via_agent(agent, envs, num_eval_episodes, sim_backend, progress_bar=False):  # noqa: C901
+def evaluate_via_agent(  # noqa: C901
+    agent, envs, num_eval_episodes, sim_backend, progress_bar=False, aex=None
+):
+    if aex is None:
+        aex = ActionExecutor()
+
     eval_metrics = defaultdict(list)
     obs, info = envs.reset()
     eps_count = 0
     if progress_bar:
         pbar = tqdm(total=num_eval_episodes)
         pbar.set_description("maniskill evaluation")
-    # i = 0
     while eps_count < num_eval_episodes:
-        # i += 1
-        # obs[:, 0] = i
         action_seq = agent.step(obs)
         if sim_backend == "cpu":
             action_seq = action_seq.cpu().numpy()
 
-        for i in range(action_seq.shape[1]):
-            obs, rew, terminated, truncated, info = envs.step(action_seq[:, i])
-            if truncated.any():
-                break
+        obs, rew, terminated, truncated, info = aex.execute_action_in_env(action_seq, envs)
 
         if truncated.any():
             assert (
@@ -134,3 +132,77 @@ def evaluate_via_agent(agent, envs, num_eval_episodes, sim_backend, progress_bar
                 pbar.update(envs.num_envs)
 
     return eval_metrics
+
+
+class ManiskillEvaluation:
+    def __init__(
+        self,
+        *,
+        output_dir,
+        env_id,
+        num_eval_episodes,
+        sim_backend,
+        num_envs,
+        env_kwargs,
+        agent_wrapper=None,
+        action_executor=None,
+        save_video=False,
+        wrappers=None,
+        progress_bar=True,
+    ):
+        if wrappers is None:
+            wrappers = []
+
+        self.agent_wrapper = agent_wrapper
+        self.output_dir = output_dir
+        self.num_eval_episodes = num_eval_episodes
+        self.sim_backend = sim_backend
+        self.num_envs = num_envs
+        self.env_kwargs = env_kwargs
+        self.action_executor = action_executor
+        self.save_video = save_video
+        self.wrappers = wrappers
+        self.env_id = env_id
+        self.progress_bar = progress_bar
+
+    def evaluate(self, agent):
+        if self.agent_wrapper is not None:
+            agent = self.agent_wrapper(agent=agent)
+
+        envs = make_eval_envs(
+            env_id=self.env_id,
+            num_envs=self.num_envs,
+            sim_backend=self.sim_backend,
+            env_kwargs=self.env_kwargs,
+            wrappers=self.wrappers,
+            save_video=self.save_video,
+            video_dir=self.output_dir,
+        )
+
+        outputs = evaluate_via_agent(
+            agent=agent,
+            envs=envs,
+            num_eval_episodes=self.num_eval_episodes,
+            sim_backend=self.sim_backend,
+            progress_bar=self.progress_bar,
+            aex=self.action_executor,
+        )
+
+        envs.close()
+        # TODO: this doesn't work properly for CPU envs for now,  # This pretty low priority
+        # it crashes ~10 mins after the evaluation is done with some
+        # weird vulkan error, so just run online eval only once at the end
+        # for now
+
+        infos = {k: np.array(v) for k, v in outputs.items()}
+        rich_media = {}
+        if self.save_video:
+            rich_media["videos"] = {
+                f"video_{num}": f"{self.output_dir}/{num}.mp4"
+                for num in range(self.num_eval_episodes // self.num_envs)
+            }
+        return infos, rich_media
+
+    @property
+    def eval_name(self):
+        return f"eval-maniskill-{self.env_id}"

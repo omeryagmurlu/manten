@@ -1,50 +1,53 @@
-from collections import deque
-
 import einops
 import torch
-from optree import tree_map
+from optree import tree_flatten, tree_map, tree_unflatten
 
-from manten_evaluation.maniskill2.utils_maniskill_common import process_observation_from_raw
+from manten_evaluation.maniskill2.lib.utils_maniskill_common import (
+    process_observation_from_raw,
+)
 
 
 class LDDPAgentWrapper:
-    def __init__(self, *, agent, obs_horizon, obs_mode, device="cuda"):
+    def __init__(self, *, agent, obs_mode, device="cuda"):
         self.__agent = agent
-        self.__obs_horizon = obs_horizon
         self.__obs_mode = obs_mode
         self.__device = device
 
     def __getattr__(self, attr):
         return getattr(self.__agent, attr)
 
-    def __add_to_obs_stack_and_get_obs_hist(self, obs_sing):
-        # from dataloader: bs, hist, dim
-        # from dataset: hist, dim
-        # from npz: epi, dim
-
-        # from agent_wrapper (here): bs (prolly 1), hist, dim
-        # from env: bs (prolly 1), dim
-
-        if not hasattr(self, "_LDDPAgentWrapper__obs_hist"):  # CPython name mangling
-            self.__obs_hist = tree_map(lambda _: deque(maxlen=self.__obs_horizon), obs_sing)
-            for _ in range(self.__obs_horizon):
-                for k, v in obs_sing.items():
-                    self.__obs_hist[k].append(v)
-
-        for k, v in obs_sing.items():
-            self.__obs_hist[k].append(v)  # append is the correct one [obs1, obs2...]
-
-        return tree_map(
-            lambda x: einops.rearrange(list(x), "hist bs ... -> bs hist ..."),
-            self.__obs_hist,
-            is_leaf=lambda x: isinstance(x, deque),
+    def __obs_dict(self, obs):
+        return self.__map_dict_over_history_with_batches(
+            obs, lambda ob: process_observation_from_raw(ob, self.__obs_mode)
         )
 
-    def __obs_dict(self, obs):
-        obs_sing = process_observation_from_raw(obs, obs_mode=self.__obs_mode)
-        obs_hist = self.__add_to_obs_stack_and_get_obs_hist(obs_sing)
+    @staticmethod
+    def __map_dict_over_history_with_batches(obs, fn):
+        # takes an input observation dict, each leaf tensor of shape (bs, nhist, ...)
+        # converts it to a list (#nhist) of observation dicts, each leaf tensor of shape (bs, ...)
+        # applies transformation to each observation dict
+        # stacks the resulting mapped observation dicts into a single, mapped observation dict with leaf tensors of shape (bs, nhist, ...)
 
-        return obs_hist
+        # future me: vmap, VMAP! over history
+
+        elems, in_obs_spec = tree_flatten(obs)
+        elems_hists = [[elem[:, t] for t in range(elem.shape[1])] for elem in elems]
+        hists_elems = LDDPAgentWrapper.transpose_list_of_lists(elems_hists)
+        hists_obs = [tree_unflatten(in_obs_spec, elems) for elems in hists_elems]
+        hists_mapped_obs = [fn(ob) for ob in hists_obs]
+        hists_mapped_elems = [tree_flatten(mapped_obs) for mapped_obs in hists_mapped_obs]
+        out_obs_spec = hists_mapped_elems[0][1]
+        hists_mapped_elems = [elem[0] for elem in hists_mapped_elems]
+        mapped_elems_hists = LDDPAgentWrapper.transpose_list_of_lists(hists_mapped_elems)
+        mapped_elems_stacked = [
+            einops.rearrange(elem, "t b ... -> b t ...") for elem in mapped_elems_hists
+        ]
+
+        return tree_unflatten(out_obs_spec, mapped_elems_stacked)
+
+    @staticmethod
+    def transpose_list_of_lists(outer):
+        return [[inner[i] for inner in outer] for i in range(len(outer[0]))]
 
     def step(self, obs):
         obs = tree_map(

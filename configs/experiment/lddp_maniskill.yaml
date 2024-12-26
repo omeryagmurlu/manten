@@ -7,17 +7,17 @@ defaults:
 project_name: manten_maniskill_${datamodule._task}
 
 _save_every_n_gs: 10000
-_detailed_metrics_every_n_gs: 5000
+_detailed_metrics_every_n_gs: 10000
 _skip_first_n_gs: 0
 training:
-  num_global_steps: 100000
+  num_global_steps: 30000
   vis_metric_key: "pos_l2"
   eval_train:
     max_steps: 6
   eval_test:
     max_steps: 6
   custom_eval:
-    every_n_global_steps: 100000
+    every_n_global_steps: 30000
     skip_first_global_steps: 0
 
   # sanity_check: False
@@ -34,43 +34,48 @@ lr_scheduler:
   num_training_steps: ${training.num_global_steps}
 
 datamodule:
+  # _task: PegInsertionSide-v1
   _task: PickCube-v1
   _pack_root: /home/i53/student/yagmurlu/code/manten/data/maniskill2/packed_demos
   _obs_horizon: 2
   _pred_horizon: 16
   _obs_mode: state
   _control_mode: pd_ee_delta_pose
+
   _batch_size: 1024
   _train_target_iters: ${_detailed_metrics_every_n_gs}
   _num_workers: 8
   # _load_count: 20
 
+agent:
+  agent:
+    act_horizon: 8
+    noise_scheduler:
+      num_train_timesteps: 100
+    num_diffusion_iters: 100
+
 custom_evaluator:
-  _target_: manten_evaluation.maniskill2.evaluate_via_agent.ManiskillEvaluation
+  _target_: manten_evaluation.maniskill2.lib.evaluation.ManiskillEvaluation
   _partial_: True
   agent_wrapper:
     _target_: manten_evaluation.maniskill2.agent_wrappers.lddp.LDDPAgentWrapper
     _partial_: True
-    obs_horizon: ${datamodule._obs_horizon}
     obs_mode: ${datamodule._obs_mode}
-  env_id: ${datamodule._task}
-  num_eval_episodes: 70
+  num_eval_episodes: 105
+  num_envs: 15
   sim_backend: cpu
-  num_envs: 10
+  env_id: ${datamodule._task}
   env_kwargs:
-    control_mode: pd_ee_delta_pose
+    control_mode: ${datamodule._control_mode}
     reward_mode: sparse
     obs_mode: ${datamodule._obs_mode}
-    render_mode: rgb_array # 'rgb_array' or 'human'
-    max_episode_steps: 150
+    render_mode: rgb_array
+    # max_episode_steps: 300
+    max_episode_steps: 100
+  wrappers:
+    - _target_: manten_evaluation.maniskill2.lib.utils_wrappers.TreeFrameStack
+      _partial_: True
+      num_stack: ${datamodule._obs_horizon}
+  action_executor:
+    _target_: manten_evaluation.maniskill2.lib.utils_wrappers.HorizonActionExecutor
   save_video: True
-
-agent:
-  agent:
-    obs_horizon: 2
-    act_horizon: 8
-    pred_horizon: 16
-    observation_shape: [42]
-    noise_scheduler:
-      num_train_timesteps: 100
-    num_diffusion_iters: 100

@@ -7,7 +7,7 @@ import torch.nn.functional as F
 import transformers
 from optree import tree_map
 
-import manten.utils.dda_pytorch3d_transforms as pytorch3d_transforms
+import manten.agents.three_dda.utils.dda_pytorch3d_transforms as pytorch3d_transforms
 
 logger = getLogger(__name__)
 

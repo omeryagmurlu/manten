@@ -13,6 +13,7 @@ from manten.utils.logging import get_logger
 from manten.utils.progbar import progbar
 from manten.utils.utils_checkpointing import save_agent_config, save_model_to_safetensors
 from manten.utils.utils_decorators import with_state_dict
+from manten.utils.utils_visualization import handle_rich_media_for_logs
 
 logger = get_logger(__name__)
 
@@ -259,26 +260,31 @@ class TrainLoops:
 
         self.accelerator.wait_for_everyone()
         if self.accelerator.is_main_process:
-            logger.info("custom evaluation@epoch:%d", self.state.epoch)
+            proc_name = f"custom_eval{'-ema' if use_ema else ''}"
 
             if callable(self.custom_evaluator):
                 custom_eval = self.custom_evaluator(
-                    output_dir=f"{self.accelerator.project_dir}/custom-eval/epoch-{self.state.epoch}{'-ema' if use_ema else ''}",
+                    output_dir=f"{self.accelerator.project_dir}/{proc_name}/epoch-{self.state.epoch}",
                 )
             else:
                 custom_eval = self.custom_evaluator
-            proc_name = f"custom_eval-{custom_eval.eval_name}"
+            proc_name = f"{proc_name}-{custom_eval.eval_name}"
 
+            logger.info("%s@epoch:%d", proc_name, self.state.epoch)
             with torch.inference_mode(), torch.no_grad():  # just double checking lol
                 agent = self.agent if not use_ema else self.ema.agent
                 agent.eval()
                 agent = self.accelerator.unwrap_model(agent)
                 agent.eval()
-                custom_eval_logs = custom_eval.evaluate(agent)
+                eval_infos, rich_media = custom_eval.evaluate(agent)
+
+            rich_logs = handle_rich_media_for_logs(rich_media)
+            eval_logs = {f"{k}-mean": v.mean() for k, v in eval_infos.items()}
 
             custom_eval_logs = {
-                f"{proc_name}/{k}-mean": v.mean() for k, v in custom_eval_logs.items()
+                f"{proc_name}/{k}": v for (k, v) in ({**eval_logs, **rich_logs}).items()
             }
+
             self.accelerator.log(custom_eval_logs, step=self.state.global_step)
             print(tabulate(custom_eval_logs.items()))
 

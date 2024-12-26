@@ -1,4 +1,5 @@
 import hydra
+from omegaconf import open_dict
 
 from manten.utils.logging import get_logger
 from manten.utils.utils_root import root
@@ -8,6 +9,7 @@ logger = get_logger(__name__)
 
 def setup(cfg):  # noqa: PLR0915
     import os
+    from pathlib import Path
 
     import torch
     from accelerate import Accelerator
@@ -15,14 +17,6 @@ def setup(cfg):  # noqa: PLR0915
     from omegaconf import OmegaConf
 
     from manten.utils.train_loops import TrainLoops
-    from manten.utils.utils_file import mkdir
-
-    # if cfg.training.resume_from_save is not None:
-    #     # hook here early (normally we load them in the loops) to load the cfg
-    #     agent_cfg = OmegaConf.load(cfg.training.resume_from_save + "/agent_config.yaml")
-    #     # for now only load the normalization stats to keep it simple, this is a hack
-    #     # HACK:  # noqa: FIX004
-    #     cfg.agent._dataset_stats = agent_cfg.position_normalization.dataset_stats
 
     logger.info("Torch version: %s", torch.__version__)
     logger.info("CUDA available: %s", torch.cuda.is_available())
@@ -41,9 +35,9 @@ def setup(cfg):  # noqa: PLR0915
     )
 
     if accelerator.is_main_process and output_dir is not None:
-        mkdir(output_dir)
-        mkdir(output_dir + "/accelerate")
-        mkdir(output_dir + "/tracker")
+        Path(output_dir).mkdir(parents=True, exist_ok=True)
+        Path(output_dir + "/accelerate").mkdir(parents=True, exist_ok=True)
+        Path(output_dir + "/tracker").mkdir(parents=True, exist_ok=True)
 
     # seeding
     base_seed = cfg.seed + accelerator.process_index * 100
@@ -59,9 +53,10 @@ def setup(cfg):  # noqa: PLR0915
     train_dataloader = datamodule.create_train_dataloader(worker_init_fn=worker_init_fn)
     test_dataloader = datamodule.create_test_dataloader(worker_init_fn=worker_init_fn)
 
-    if cfg.agent._dataset_stats is None:  # noqa: SLF001
-        dataset_stats = datamodule.get_dataset_statistics()
-        cfg.agent._dataset_stats = dataset_stats  # noqa: SLF001
+    dataset_info = datamodule.get_dataset_info()
+
+    with open_dict(cfg):
+        cfg.agent.agent.dataset_info = dataset_info
 
     agent = hydra.utils.instantiate(cfg.agent.agent)
 
@@ -125,7 +120,7 @@ def setup(cfg):  # noqa: PLR0915
     accelerator.end_training()
 
 
-@hydra.main(version_base=None, config_path=str(root / "configs"), config_name="train")
+@hydra.main(version_base="1.1", config_path=str(root / "configs"), config_name="train")
 def main(cfg):
     """
     Main function to train an agent.

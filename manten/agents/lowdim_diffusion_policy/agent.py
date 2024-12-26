@@ -1,8 +1,8 @@
-import numpy as np
 import torch
 
 from manten.agents.base_agent import BaseAgent
 from manten.agents.lowdim_diffusion_policy.conditional_unet1d import ConditionalUnet1D
+from manten.agents.utils.normalization import MinMaxScaler, NoopScaler
 from manten.metrics.dummy_metric import PosTrajMetric, PosTrajStats
 
 
@@ -10,19 +10,34 @@ class LowdimDiffusionPolicyAgent(BaseAgent):
     def __init__(
         self,
         *,
-        obs_horizon,
         act_horizon,
-        pred_horizon,
-        act_dim,
-        observation_shape,
+        obs_horizon=None,
+        pred_horizon=None,
+        act_dim=None,
+        observation_shape=None,
         noise_scheduler,
         num_diffusion_iters,
         diffusion_step_embed_dim=None,
+        action_scaler=MinMaxScaler,
         unet_dims=None,
         n_groups=None,
         **kwargs,
     ):
         super().__init__(**kwargs)
+        if obs_horizon is None:
+            obs_horizon = self.dataset_info.obs_horizon
+        if pred_horizon is None:
+            pred_horizon = self.dataset_info.pred_horizon
+        if act_dim is None:
+            act_dim = self.dataset_info.act_dim
+        if observation_shape is None:
+            observation_shape = self.dataset_info.obs_shape
+
+        if self.dataset_info is not None:
+            self.action_scaler = action_scaler(**self.dataset_info.actions_stats)
+        else:
+            self.action_scaler = NoopScaler()
+
         self.obs_horizon = obs_horizon
         self.act_horizon = act_horizon
         self.pred_horizon = pred_horizon
@@ -32,7 +47,7 @@ class LowdimDiffusionPolicyAgent(BaseAgent):
         self.noise_pred_net = ConditionalUnet1D(
             input_dim=self.act_dim,  # act_horizon is not used (U-Net doesn't care)
             global_cond_dim=(  # because of sliding window
-                obs_horizon * np.prod(observation_shape)
+                obs_horizon * observation_shape[-1]
             ),
             diffusion_step_embed_dim=diffusion_step_embed_dim,
             down_dims=unet_dims,
@@ -54,6 +69,8 @@ class LowdimDiffusionPolicyAgent(BaseAgent):
         timesteps = torch.randint(
             0, self.noise_scheduler.config.num_train_timesteps, (B,), device=obs_seq.device
         ).long()
+
+        action_seq = self.action_scaler.scale(action_seq)
 
         # add noise to the clean images(actions) according to the noise magnitude at each diffusion iteration
         # (this is the forward diffusion process)
@@ -97,6 +114,8 @@ class LowdimDiffusionPolicyAgent(BaseAgent):
                     timestep=k,
                     sample=noisy_action_seq,
                 ).prev_sample
+
+        noisy_action_seq = self.action_scaler.descale(noisy_action_seq)
 
         # only take act_horizon number of actions
         start = self.obs_horizon - 1

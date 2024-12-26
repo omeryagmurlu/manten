@@ -4,7 +4,7 @@ import numpy as np
 import torch
 from scipy.signal import argrelextrema
 
-from manten.utils import dda_pytorch3d_transforms
+from manten.agents.three_dda.utils import dda_pytorch3d_transforms
 
 
 def get_eef_velocity_from_robot(robot):

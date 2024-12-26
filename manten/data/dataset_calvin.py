@@ -11,8 +11,11 @@ from time import time
 import torch
 from torch.utils.data import Dataset
 
+from manten.agents.three_dda.utils.dda_utils_with_calvin import (
+    convert_rotation,
+    to_relative_action,
+)
 from manten.data.utils import Resize, TrajectoryInterpolator, loader
-from manten.utils.dda_utils_with_calvin import convert_rotation, to_relative_action
 from manten.utils.logging import get_logger
 from manten.utils.progbar import progbar
 

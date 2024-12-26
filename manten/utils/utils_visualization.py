@@ -38,13 +38,17 @@ def visualize_image(images, labels=None, grid_edge=5):
     import torch
     import wandb
 
-    images = images[:grid_edge * grid_edge]
+    images = images[: grid_edge * grid_edge]
     # images: (B, C, H, W) to (B, C, H, W) with B = grid_edge * grid_edge, must pad accordingly
     if images.shape[0] < grid_edge * grid_edge:
-        pad = torch.zeros(grid_edge * grid_edge - images.shape[0], *images.shape[1:], dtype=images.dtype)
+        pad = torch.zeros(
+            grid_edge * grid_edge - images.shape[0], *images.shape[1:], dtype=images.dtype
+        )
         images = torch.cat([images, pad], dim=0)
 
-    image = einops.rearrange(images, "(nh nw) c h w -> c (nh h) (nw w)", nh=grid_edge, nw=grid_edge)
+    image = einops.rearrange(
+        images, "(nh nw) c h w -> c (nh h) (nw w)", nh=grid_edge, nw=grid_edge
+    )
 
     if labels is not None:
         caption = f"Labels: {labels[:grid_edge * grid_edge]}"
@@ -52,3 +56,13 @@ def visualize_image(images, labels=None, grid_edge=5):
         caption = None
 
     return wandb.Image(image, caption=caption)
+
+
+def handle_rich_media_for_logs(rich_media):
+    import wandb
+
+    rich_logs = {}
+    if rich_media and "videos" in rich_media:
+        rich_logs.update({k: wandb.Video(v) for (k, v) in rich_media["videos"].items()})
+
+    return rich_logs

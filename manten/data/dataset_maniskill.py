@@ -43,6 +43,7 @@ class ManiSkillDataset(Dataset):
             if obs_modalities is not None
             else self.FULL_OBS_MODALITIES[obs_mode]
         )
+        self.obs_mode = obs_mode
 
         self.paths = {
             "action_lengths": f"{pack_root}/{task}/{obs_mode}/{control_mode}/traj_lengths.npy",
@@ -158,3 +159,34 @@ class ManiSkillDataset(Dataset):
             "actions": load(epf(key="actions")),
             "observations": obs_dict,
         }
+
+    @functools.cache  # noqa: B019
+    def get_dataset_info(self):
+        all_actions = []
+        for idx in range(len(self.paths["action_lengths"])):
+            episode = self.get_episode(idx)
+            all_actions.append(episode["actions"])
+
+        all_actions = np.concatenate(all_actions, axis=0)
+        actions_stats = {
+            "p01": np.percentile(all_actions, 1, axis=0).tolist(),
+            "p99": np.percentile(all_actions, 99, axis=0).tolist(),
+            "min": np.min(all_actions, axis=0).tolist(),
+            "max": np.max(all_actions, axis=0).tolist(),
+            "mean": np.mean(all_actions, axis=0).tolist(),
+            "std": np.std(all_actions, axis=0).tolist(),
+        }
+
+        sample_batch = self[0]
+
+        infos = {
+            "actions_stats": actions_stats,
+            "act_dim": sample_batch["actions"].shape[-1],
+            "obs_horizon": self.obs_horizon,
+            "pred_horizon": self.pred_horizon,
+        }
+
+        if self.obs_mode == "state":
+            infos["obs_shape"] = list(sample_batch["observations"]["state_obs"].shape)
+
+        return infos
