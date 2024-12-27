@@ -1,5 +1,6 @@
 import shutil
 from collections import deque
+from collections.abc import Callable
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Protocol
@@ -18,19 +19,24 @@ from manten.utils.utils_visualization import handle_rich_media_for_logs
 logger = get_logger(__name__)
 
 
-@dataclass
-@with_state_dict("epoch", "global_step", "best_mean_train_epoch_loss")
-class TrainLoopsState:
-    epoch: int = field(default=0)
-    global_step: int = field(default=0)
-    best_mean_train_epoch_loss: float = field(default=float("inf"))
-
-
 class EveryNConfig(Protocol):
     every_n_epochs: int | None
     skip_first_epochs: int | None
     every_n_global_steps: int | None
     skip_first_global_steps: int | None
+
+
+class HasMaxSteps(Protocol):
+    max_steps: int
+
+
+class EveryNConfigWithMaxSteps(EveryNConfig, HasMaxSteps):
+    pass
+
+
+class CustomEvaluator(Protocol):
+    eval_name: str
+    evaluate: Callable
 
 
 class TrainLoopsConfig(Protocol):
@@ -43,9 +49,21 @@ class TrainLoopsConfig(Protocol):
     log_every_n_steps: int
 
     save: EveryNConfig
-    val: EveryNConfig
-    eval_test: EveryNConfig
-    eval_train: EveryNConfig
+    val: EveryNConfigWithMaxSteps
+    eval_test: EveryNConfigWithMaxSteps
+    eval_train: EveryNConfigWithMaxSteps
+    custom_eval: EveryNConfig
+
+    vis_metric_key: str | None
+    log_train_timing: bool
+
+
+@dataclass
+@with_state_dict("epoch", "global_step", "best_mean_train_epoch_loss")
+class TrainLoopsState:
+    epoch: int = field(default=0)
+    global_step: int = field(default=0)
+    best_mean_train_epoch_loss: float = field(default=float("inf"))
 
 
 class TrainLoops:
@@ -60,7 +78,7 @@ class TrainLoops:
         optimizer,
         lr_scheduler,
         log_aggregator,
-        custom_evaluator,
+        custom_evaluator: CustomEvaluator | Callable[..., CustomEvaluator] | None,
         ema,
         whole_cfg,
     ):

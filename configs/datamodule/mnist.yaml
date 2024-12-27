@@ -1,6 +1,6 @@
 _mnist_batch_size: 256
 datamodule:
-  _target_: manten.utils.dummy_datamodule.DummyDataModule
+  _target_: manten.utils.utils_data.DummyDataModule
   train_dataloader:
     _target_: torch.utils.data.DataLoader
     dataset:

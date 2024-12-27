@@ -8,7 +8,7 @@ import torch
 from torch.utils.data import Dataset
 from tqdm import tqdm
 
-from manten.utils.dummy_datamodule import modulo_dataset
+from manten.utils.utils_data import modulo_dataset
 
 
 @modulo_dataset

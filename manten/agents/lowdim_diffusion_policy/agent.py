@@ -1,12 +1,17 @@
 import torch
 
-from manten.agents.base_agent import BaseAgent
 from manten.agents.lowdim_diffusion_policy.conditional_unet1d import ConditionalUnet1D
-from manten.agents.utils.normalization import MinMaxScaler, NoopScaler
+from manten.agents.utils.mixins import DatasetActionScalerMixin
+from manten.agents.utils.templates import BatchStateObservationActionAgentTemplate
 from manten.metrics.dummy_metric import PosTrajMetric, PosTrajStats
 
 
-class LowdimDiffusionPolicyAgent(BaseAgent):
+@BatchStateObservationActionAgentTemplate.make_agent(
+    evaluation_metric_cls=PosTrajMetric, evaluation_stats_cls=PosTrajStats
+)
+class LowdimDiffusionPolicyAgent(
+    DatasetActionScalerMixin, BatchStateObservationActionAgentTemplate
+):
     def __init__(
         self,
         *,
@@ -18,7 +23,6 @@ class LowdimDiffusionPolicyAgent(BaseAgent):
         noise_scheduler,
         num_diffusion_iters,
         diffusion_step_embed_dim=None,
-        action_scaler=MinMaxScaler,
         unet_dims=None,
         n_groups=None,
         **kwargs,
@@ -32,11 +36,6 @@ class LowdimDiffusionPolicyAgent(BaseAgent):
             act_dim = self.dataset_info.act_dim
         if observation_shape is None:
             observation_shape = self.dataset_info.obs_shape
-
-        if self.dataset_info is not None:
-            self.action_scaler = action_scaler(**self.dataset_info.actions_stats)
-        else:
-            self.action_scaler = NoopScaler()
 
         self.obs_horizon = obs_horizon
         self.act_horizon = act_horizon
@@ -56,7 +55,10 @@ class LowdimDiffusionPolicyAgent(BaseAgent):
         self.num_diffusion_iters = 100
         self.noise_scheduler = noise_scheduler
 
-    def compute_loss(self, obs_seq, action_seq):
+    def compute_train_gt_and_pred(self, state_obs, actions):
+        obs_seq = state_obs
+        action_seq = actions
+
         B = obs_seq.shape[0]
 
         # observation as FiLM conditioning
@@ -79,11 +81,11 @@ class LowdimDiffusionPolicyAgent(BaseAgent):
         # predict the noise residual
         noise_pred = self.noise_pred_net(noisy_action_seq, timesteps, global_cond=obs_cond)
 
-        self.metric.feed(ground=noise, prediction=noise_pred)
+        return noisy_action_seq, noise_pred
 
-        return self.metric
+    def predict_actions(self, state_obs):
+        obs_seq = state_obs
 
-    def get_action(self, obs_seq):
         # init scheduler
         self.noise_scheduler.set_timesteps(self.num_diffusion_iters)
         # set_timesteps will change noise_scheduler.timesteps is only used in noise_scheduler.step()
@@ -122,22 +124,5 @@ class LowdimDiffusionPolicyAgent(BaseAgent):
         end = start + self.act_horizon
         return noisy_action_seq[:, start:end]  # (B, act_horizon, act_dim)
 
-    def train_step(self, batch):
-        obs_seq = batch["observations"]["state_obs"]
-        action_seq = batch["actions"]
-        return self.compute_loss(obs_seq, action_seq)
-
-    @torch.no_grad()
-    def eval_step(self, batch, *_, **__):
-        obs_seq = batch["observations"]["state_obs"]
-        action = self.get_action(obs_seq)
-
-        if "actions" in batch:
-            metric = PosTrajMetric()
-            metric.feed(
-                ground=batch["actions"][..., : self.act_horizon, :], prediction=action
-            )
-        else:
-            metric = PosTrajStats()
-            metric.feed(stats=action)
-        return metric, action
+    def adapt_actions_from_ds_actions(self, actions):
+        return actions[..., : self.act_horizon, :]

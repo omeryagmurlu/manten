@@ -56,6 +56,4 @@ class LDDPAgentWrapper:
             else torch.tensor(x, device=self.__device),
             obs,
         )
-        batch = {"observations": self.__obs_dict(obs)}
-        _metric, trajectory = self.__agent("eval", batch)
-        return trajectory
+        return self.__agent.predict_actions(observations=self.__obs_dict(obs))

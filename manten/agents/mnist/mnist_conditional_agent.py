@@ -2,7 +2,7 @@ import torch
 from diffusers import UNet2DModel
 from torch import nn
 
-from manten.agents.base_agent import BaseAgent
+from manten.agents.utils.base_agent import BaseAgent
 from manten.metrics.mnist_metric import MNISTConditionalImageStats
 
 

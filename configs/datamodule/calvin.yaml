@@ -9,7 +9,7 @@ _batch_size: 30
 _num_workers: 4
 
 datamodule:
-  _target_: manten.utils.dummy_datamodule.DummyDataModule
+  _target_: manten.utils.utils_data.DummyDataModule
   train_dataloader: &_train_dataloader
     _target_: torch.utils.data.DataLoader
     dataset: &_train_dataloader_dataset

@@ -1,7 +1,22 @@
+import functools
+from collections.abc import Callable
 from enum import Enum
 from typing import TypeVar
 
 E = TypeVar("E", bound=Enum)
+
+T = TypeVar("T")
+
+
+def with_partial(func: Callable[..., T]) -> Callable[..., Callable[..., T]]:
+    """wraps a function with (a single layer of) functools.partial.
+    useful for decorators that need to be parameterized."""
+
+    @functools.wraps(func)
+    def partial_func(*args, **kwargs):
+        return functools.partial(func, *args, **kwargs)
+
+    return partial_func
 
 
 def with_name_resolution(enum_cls: E):

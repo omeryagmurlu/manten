@@ -31,6 +31,7 @@ ignore = [
     "ANN202",
     "ANN204",
     "ANN205",
+    # "ANN401", # any type...
 
     # # missing documentation
     # "D100",

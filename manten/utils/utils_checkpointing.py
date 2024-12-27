@@ -9,7 +9,10 @@ logger = getLogger(__name__)
 def load_model_from_safetensors(model, path, device=None):
     from safetensors.torch import load_model
 
-    load_model(model, path, device)
+    if device is not None:
+        load_model(model, path, device=device)
+    else:
+        load_model(model, path)
     logger.info("Loaded safetensors from %s", path)
 
 

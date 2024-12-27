@@ -1,6 +1,8 @@
 import logging
 from typing import Protocol
 
+import torch
+
 logger = logging.getLogger(__name__)
 
 
@@ -28,7 +30,7 @@ class DummyDataModule(UhaDataModuleProtocol):
         return info
 
 
-def modulo_dataset(cls):
+def modulo_dataset(cls: type[torch.utils.data.Dataset]):
     class ModuloDataset(cls):
         def __init__(
             self,

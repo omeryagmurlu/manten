@@ -1,7 +1,7 @@
 import diffusers
 import torch
 
-from manten.agents.base_agent import BaseAgent
+from manten.agents.utils.base_agent import BaseAgent
 from manten.metrics.mnist_metric import MNISTImageStats
 
 

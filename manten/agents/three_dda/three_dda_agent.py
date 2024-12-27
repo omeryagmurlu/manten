@@ -1,7 +1,6 @@
 import einops
 import torch
 
-from manten.agents.base_agent import BaseAgent
 from manten.agents.three_dda.utils.dda_utils import (
     compute_rotation_matrix_from_ortho6d,
     get_ortho6d_from_rotation_matrix,
@@ -9,6 +8,7 @@ from manten.agents.three_dda.utils.dda_utils import (
     normalise_quat,
     quaternion_to_matrix,
 )
+from manten.agents.utils.base_agent import BaseAgent
 from manten.metrics.trajectory_metric import TrajectoryMetric, TrajectoryStats
 
 # TODO: noqa find a way to handle std input shape this is no way to live

@@ -3,7 +3,7 @@ import torch.nn.functional as F
 
 from manten.utils.utils_pytree import with_tree_map
 
-from .base_metric import BaseMetric, BaseStats
+from .utils.base_metric import BaseMetric, BaseStats
 
 
 class MSELossDummyMetric(BaseMetric):

@@ -1,4 +1,4 @@
-from abc import ABC
+from abc import ABC, abstractmethod
 
 import torch
 from torch import nn
@@ -6,12 +6,20 @@ from torch import nn
 DEFAULT_MAX = 1.0  # with tolerance
 
 
-class BaseScaler(nn.Module, ABC):
+class Scaler(nn.Module, ABC):
     def __init__(self, **_):
         super().__init__()
 
+    @abstractmethod
+    def scale(self, x):
+        raise NotImplementedError
 
-class NoopScaler(BaseScaler):
+    @abstractmethod
+    def descale(self, x):
+        raise NotImplementedError
+
+
+class NoopScaler(Scaler):
     def __init__(self, **_):
         super().__init__()
 
@@ -22,7 +30,7 @@ class NoopScaler(BaseScaler):
         return x
 
 
-class MinMaxScaler(BaseScaler):
+class MinMaxScaler(Scaler):
     """Min-max scaling."""
 
     def __init__(self, *, min, max, min_value=-DEFAULT_MAX, max_value=DEFAULT_MAX, **_):  # noqa: A002
@@ -43,7 +51,7 @@ class MinMaxScaler(BaseScaler):
         ) + self.min
 
 
-class P01P99Scaler(BaseScaler):
+class P01P99Scaler(Scaler):
     """Scaling based on the 1st and 99th percentiles.
     It is often useful to set min/max_value to ~0.5 to avoid saturation, or just use MinMaxScaler.
     """
@@ -66,7 +74,7 @@ class P01P99Scaler(BaseScaler):
         ) + self.p01
 
 
-# class NormalScaler(BaseScaler):
+# class NormalScaler(Scaler):
 #     def __init__(self, *, mean, std, target_mean=0.0, target_std=DEFAULT_MAX, **_):
 #         super().__init__()
 #         self.register_buffer("mean", torch.tensor(mean))
