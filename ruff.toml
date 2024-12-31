@@ -31,7 +31,7 @@ ignore = [
     "ANN202",
     "ANN204",
     "ANN205",
-    # "ANN401", # any type...
+    "ANN401", # any type...
 
     # # missing documentation
     # "D100",
@@ -70,6 +70,8 @@ ignore = [
     "INP001",  # i hate __init__.py, long live pep420
     "UP038",   # forces a subpar is instance or
     "S311",    # thinks I'm using rnadom for crypto, but I'm not
-    "RUF007",  # imho zip is more readable instead of pairwise
-    "PYI041",  # this is a bad rule lol, int and float are not the same
+    # "RUF007",  # imho zip is more readable instead of pairwise
+    "PYI041", # this is a bad rule lol, int and float are not the same
+
+    "PLR1714",
 ]

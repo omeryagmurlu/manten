@@ -22,7 +22,7 @@ done
 echo "Replaying demonstrations..."
 for rigid_task in {"PickCube-v1",}
 do
-for obs_mode in {"state",} # rgbd, state, pointcloud
+for obs_mode in {"state","pointcloud"} # rgbd, state, pointcloud
 do
 python -m mani_skill.trajectory.replay_trajectory \
   --traj-path "demos/$rigid_task/motionplanning/trajectory.h5" \

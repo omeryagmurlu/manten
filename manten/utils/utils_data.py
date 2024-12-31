@@ -1,5 +1,5 @@
 import logging
-from typing import Protocol
+from typing import Protocol, TypeVar
 
 import torch
 
@@ -30,7 +30,10 @@ class DummyDataModule(UhaDataModuleProtocol):
         return info
 
 
-def modulo_dataset(cls: type[torch.utils.data.Dataset]):
+T = TypeVar("T", bound=type[torch.utils.data.Dataset])
+
+
+def modulo_dataset(cls: T) -> T:
     class ModuloDataset(cls):
         def __init__(
             self,

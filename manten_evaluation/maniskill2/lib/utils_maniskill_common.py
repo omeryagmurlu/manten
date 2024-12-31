@@ -1,11 +1,12 @@
 import einops
 import numpy as np
+import optree
 import torch
 
 
 def get_to_remove_indices(pcd):
-    FAR_THRESHOLD = 0.5
-    FOCUS_THRESHOLD = 1
+    FAR_THRESHOLD = 0.5  # 0 for camera far, 1 camera near
+    FOCUS_THRESHOLD = 1  # meters
 
     abs_fn = np.abs if isinstance(pcd, np.ndarray) else torch.abs
 
@@ -20,32 +21,44 @@ def get_to_remove_indices(pcd):
     return to_remove_indices
 
 
-def process_observation_from_raw(obs, obs_mode, image_size: int = 128, keep_keys=None):
+def process_observation_from_raw(obs, obs_mode, image_size: int = 128, cam=None):
     if obs_mode == "state":
         retval = {"state_obs": obs}
     elif obs_mode == "pointcloud":
         pcd = obs["pointcloud"]["xyzw"]
 
+        if cam is None:
+            _, n_points, _ = pcd.shape
+            assert image_size is not None
+            cam = n_points // (image_size**2)
+        if image_size is None:
+            _, n_points, _ = pcd.shape
+            assert cam is not None
+            image_size = int(np.sqrt(n_points // cam))
+
         to_remove_indices = get_to_remove_indices(pcd)
+
+        paths, elems, _ = optree.tree_flatten_with_path(
+            {**obs["sensor_param"], **obs["agent"], **obs["extra"]}
+        )
+        paths = [".".join(path) for path in paths]
+        extra_elems = dict(zip(paths, elems, strict=False))
+
         retval = {
+            **extra_elems,
             "rgb_obs": einops.rearrange(
                 obs["pointcloud"]["rgb"],
                 "ix (cam h w) c -> ix cam h w c",
-                cam=2,
+                cam=cam,
                 h=image_size,
                 w=image_size,
                 c=3,
             ),
             "pcd_obs": pcd[..., :3],
             "pcd_mask": ~to_remove_indices,
-            "state_obs": einops.pack(  # for [0] at the end, see #pack return in einops
-                [obs["agent"]["qpos"], obs["agent"]["qvel"], obs["extra"]["tcp_pose"]], "ix *"
-            )[0],
         }
+
     else:
         raise NotImplementedError(f"obs_mode {obs_mode} not implemented")
-
-    if keep_keys is not None:
-        retval = {k: v for k, v in retval.items() if k in keep_keys}
 
     return retval

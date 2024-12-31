@@ -10,7 +10,7 @@ from manten.metrics.dummy_metric import PosTrajMetric, PosTrajStats
     evaluation_metric_cls=PosTrajMetric, evaluation_stats_cls=PosTrajStats
 )
 class LowdimDiffusionPolicyAgent(
-    DatasetActionScalerMixin, BatchStateObservationActionAgentTemplate
+    BatchStateObservationActionAgentTemplate, DatasetActionScalerMixin
 ):
     def __init__(
         self,
@@ -18,13 +18,13 @@ class LowdimDiffusionPolicyAgent(
         act_horizon,
         obs_horizon=None,
         pred_horizon=None,
-        act_dim=None,
-        observation_shape=None,
         noise_scheduler,
         num_diffusion_iters,
         diffusion_step_embed_dim=None,
         unet_dims=None,
         n_groups=None,
+        actions_shape=None,
+        observations_shape=None,
         **kwargs,
     ):
         super().__init__(**kwargs)
@@ -32,28 +32,30 @@ class LowdimDiffusionPolicyAgent(
             obs_horizon = self.dataset_info.obs_horizon
         if pred_horizon is None:
             pred_horizon = self.dataset_info.pred_horizon
-        if act_dim is None:
-            act_dim = self.dataset_info.act_dim
-        if observation_shape is None:
-            observation_shape = self.dataset_info.obs_shape
+
+        if actions_shape is not None:
+            self.actions_shape = actions_shape
+        if observations_shape is not None:
+            self.observations_shape = observations_shape
+
+        assert self.actions_shape[-2] == pred_horizon
 
         self.obs_horizon = obs_horizon
         self.act_horizon = act_horizon
         self.pred_horizon = pred_horizon
-        self.act_dim = act_dim
         self.num_diffusion_iters = num_diffusion_iters
+        self.noise_scheduler = noise_scheduler
 
+        self.act_dim = self.actions_shape[-1]
         self.noise_pred_net = ConditionalUnet1D(
             input_dim=self.act_dim,  # act_horizon is not used (U-Net doesn't care)
             global_cond_dim=(  # because of sliding window
-                obs_horizon * observation_shape[-1]
+                obs_horizon * self.observations_shape[-1]
             ),
             diffusion_step_embed_dim=diffusion_step_embed_dim,
             down_dims=unet_dims,
             n_groups=n_groups,
         )
-        self.num_diffusion_iters = 100
-        self.noise_scheduler = noise_scheduler
 
     def compute_train_gt_and_pred(self, state_obs, actions):
         obs_seq = state_obs
@@ -81,7 +83,7 @@ class LowdimDiffusionPolicyAgent(
         # predict the noise residual
         noise_pred = self.noise_pred_net(noisy_action_seq, timesteps, global_cond=obs_cond)
 
-        return noisy_action_seq, noise_pred
+        return noise, noise_pred
 
     def predict_actions(self, state_obs):
         obs_seq = state_obs

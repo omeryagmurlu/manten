@@ -5,6 +5,7 @@ from types import MappingProxyType
 import einops
 import numpy as np
 import torch
+from optree import tree_map
 from torch.utils.data import Dataset
 from tqdm import tqdm
 
@@ -13,9 +14,17 @@ from manten.utils.utils_data import modulo_dataset
 
 @modulo_dataset
 class ManiSkillDataset(Dataset):
+    OBS_MODE_FILE_NAMES = MappingProxyType(
+        {
+            "pointcloud": "pointcloud",
+            "rgb": "pointcloud",  # has the same info, so just don't bother and use data in pointcloud
+            "state": "state",
+        }
+    )
     FULL_OBS_MODALITIES = MappingProxyType(
         {
             "pointcloud": ("rgb_obs", "pcd_obs", "pcd_mask", "state_obs"),
+            "rgb": ("rgb_obs", "state_obs"),
             "state": ("state_obs",),
         }
     )
@@ -30,6 +39,8 @@ class ManiSkillDataset(Dataset):
         task,
         obs_mode,
         obs_modalities=None,
+        state_modality_keys=None,
+        rgb_modality_keys=None,
         control_mode,
         # ...
         obs_horizon,
@@ -38,20 +49,27 @@ class ManiSkillDataset(Dataset):
         load_count=None,
         use_mmap=False,
     ):
-        self.obs_modalities = (
-            obs_modalities
-            if obs_modalities is not None
-            else self.FULL_OBS_MODALITIES[obs_mode]
-        )
+        if obs_modalities is None:
+            obs_modalities = self.FULL_OBS_MODALITIES[obs_mode]
+        if state_modality_keys is None:
+            state_modality_keys = []
+        if rgb_modality_keys is None and obs_mode == "rgb":
+            raise ValueError("rgb_modality_keys must be provided for rgb obs_mode")
+
         self.obs_mode = obs_mode
+        self.obs_modalities = obs_modalities
+        self.state_modality_keys = state_modality_keys
+        self.rgb_modality_keys = rgb_modality_keys
+
+        path_obs_mode = self.OBS_MODE_FILE_NAMES[obs_mode]
 
         self.paths = {
-            "action_lengths": f"{pack_root}/{task}/{obs_mode}/{control_mode}/traj_lengths.npy",
+            "action_lengths": f"{pack_root}/{task}/{path_obs_mode}/{control_mode}/traj_lengths.npy",
             "episode_format": partial(
-                "{pack_root}/{task}/{obs_mode}/{control_mode}/episode_{episode_idx}_{key}.npy".format,
+                "{pack_root}/{task}/{path_obs_mode}/{control_mode}/episode_{episode_idx}/{key}.npy".format,
                 pack_root=pack_root,
                 task=task,
-                obs_mode=obs_mode,
+                path_obs_mode=path_obs_mode,
                 control_mode=control_mode,
             ),
         }
@@ -111,17 +129,20 @@ class ManiSkillDataset(Dataset):
         episode = self.get_episode(traj_idx)
         L, act_dim = episode["actions"].shape
 
-        obs_dict = {
-            key: torch.tensor(obs[max(0, start) : start + self.obs_horizon])
-            for key, obs in episode["observations"].items()
-        }
+        obs_dict = tree_map(
+            lambda obs: torch.tensor(obs[max(0, start) : start + self.obs_horizon]),
+            episode["observations"],
+        )
+        obs_dict = self.apply_static_transforms(obs_dict, self.obs_mode)
         # start+self.obs_horizon is at least 1
         act_seq = torch.tensor(episode["actions"][max(0, start) : end])
         if start < 0:  # pad before the trajectory
-            obs_dict = {
-                key: torch.cat([einops.repeat(obs[0], "... -> k ...", k=-start), obs], dim=0)
-                for key, obs in obs_dict.items()
-            }
+            obs_dict = tree_map(
+                lambda obs: torch.cat(
+                    [einops.repeat(obs[0], "... -> k ...", k=-start), obs], dim=0
+                ),
+                obs_dict,
+            )
             act_seq = torch.cat([act_seq[0].repeat(-start, 1), act_seq], dim=0)
         if end > L:  # pad after the trajectory
             gripper_action = act_seq[-1, -1]
@@ -130,8 +151,6 @@ class ManiSkillDataset(Dataset):
             pad_action = torch.cat((self.pad_action_arm, gripper_action[None]), dim=0)
             act_seq = torch.cat([act_seq, pad_action.repeat(end - L, 1)], dim=0)
             # making the robot (arm and gripper) stay still
-        for obs in obs_dict.values():
-            assert obs.shape[0] == self.obs_horizon
         assert act_seq.shape[0] == self.pred_horizon
 
         # |o|o|                             observations: 2
@@ -143,6 +162,18 @@ class ManiSkillDataset(Dataset):
             "actions": act_seq,
         }
 
+    @staticmethod
+    def apply_static_transforms(obs_dict, obs_mode):
+        if obs_mode == "rgb":
+            for cam_key, cam_v in obs_dict["rgb_obs"].items():
+                cam = einops.rearrange(cam_v, "t h w c -> t c h w")
+                obs_dict["rgb_obs"][cam_key] = cam.float() / 255.0
+        elif obs_mode == "pointcloud":
+            raise NotImplementedError
+            # use transformpcd from pointcloudmatters
+
+        return obs_dict
+
     @functools.cache  # noqa: B019
     def get_episode(self, idx):
         epf = partial(self.paths["episode_format"], episode_idx=idx)
@@ -150,15 +181,48 @@ class ManiSkillDataset(Dataset):
 
         obs_dict = {}
         for key in self.obs_modalities:
-            obs_dict[key] = load(epf(key=key))
+            if key == "state_obs":
+                if self.obs_mode == "state":
+                    # there is an np array called state_obs
+                    obs_dict[key] = load(epf(key=key))
+                else:
+                    # we need to aggregate the state modalities into one
+                    obs_dict[key] = self.get_aggregated_state(load, epf)
+            elif key == "rgb_obs":
+                loaded = load(epf(key=key))
+                if self.obs_mode == "rgb":
+                    _, ncam, h, w, c = loaded.shape
+                    if ncam != len(self.rgb_modality_keys):
+                        raise ValueError(
+                            f"Number of cameras in rgb_obs ({ncam}) does not match the number of rgb_modality_keys ({len(self.rgb_modality_keys)})"
+                        )
+                    obs_dict[key] = {
+                        k: loaded[:, cam_i] for cam_i, k in enumerate(self.rgb_modality_keys)
+                    }
+                else:
+                    # for pcd the colors are in rgb_obs
+                    obs_dict[key] = loaded
+            else:
+                obs_dict[key] = load(epf(key=key))
 
         if "pcd_obs" in self.obs_modalities:
             obs_dict["pcd_mask"] = load(epf(key="pcd_mask"))
+            # TODO: also load camera intrinsics/extrinsics for stuff
 
         return {
             "actions": load(epf(key="actions")),
             "observations": obs_dict,
         }
+
+    def get_aggregated_state(self, load, epf):
+        if not self.state_modality_keys:
+            raise ValueError("No state modality keys provided")
+        if len(self.state_modality_keys) == 1:
+            # keep mmap untouched if not needed
+            return load(epf(key=self.state_modality_keys[0]))
+
+        states = [load(epf(key=smod)) for smod in self.state_modality_keys]
+        return np.concatenate(states, axis=-1)
 
     @functools.cache  # noqa: B019
     def get_dataset_info(self):
@@ -181,12 +245,32 @@ class ManiSkillDataset(Dataset):
 
         infos = {
             "actions_stats": actions_stats,
-            "act_dim": sample_batch["actions"].shape[-1],
             "obs_horizon": self.obs_horizon,
             "pred_horizon": self.pred_horizon,
+            "actions_shape": list(sample_batch["actions"].shape),
+            "observations_shape": tree_map(
+                lambda x: list(x.shape), sample_batch["observations"]
+            ),
         }
 
-        if self.obs_mode == "state":
-            infos["obs_shape"] = list(sample_batch["observations"]["state_obs"].shape)
-
         return infos
+
+
+if __name__ == "__main__":
+    dataset = ManiSkillDataset(
+        simulated_length=10000000,
+        test_ratio=0.05,
+        task="PickCube-v1",
+        pack_root="/home/i53/student/yagmurlu/code/manten/data/maniskill2/packed_demos",
+        obs_horizon=2,
+        pred_horizon=16,
+        obs_mode="rgb",
+        state_modality_keys=["goal_pos"],
+        rgb_modality_keys=["camera1"],
+        control_mode="pd_ee_delta_pose",
+        use_mmap=True,
+        load_count=35,
+        # use_mmap=False,
+    )
+
+    print(dataset[0])

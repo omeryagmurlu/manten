@@ -6,8 +6,9 @@ _task: ???
 _pack_root: ???
 _obs_horizon: ???
 _pred_horizon: ???
-_obs_modalities: null # ["pcd_obs", "rgb_obs", "state_obs"]
 _obs_mode: ??? # "state", "pointcloud", "rgbd"
+_state_modality_keys: ???
+_rgb_modality_keys: ???
 _control_mode: ???
 _load_count: null
 
@@ -51,7 +52,8 @@ __1:
       pack_root: ${...._pack_root}
       obs_horizon: ${...._obs_horizon}
       pred_horizon: ${...._pred_horizon}
-      obs_modalities: ${...._obs_modalities}
+      state_modality_keys: ${...._state_modality_keys}
+      rgb_modality_keys: ${...._rgb_modality_keys}
       obs_mode: ${...._obs_mode}
       control_mode: ${...._control_mode}
       load_count: ${...._load_count}

@@ -78,8 +78,10 @@ def pack_episode(episode_idx, *, h5filename, outdir, obs_mode):
         "actions": episode["actions"],
     }
 
+    ep_dir = outdir / f"episode_{episode_idx}"
+    ep_dir.mkdir(parents=True, exist_ok=True)
     for key, value in dc.items():
-        np.save(outdir / f"episode_{episode_idx}_{key}.npy", value)
+        np.save(ep_dir / f"{key}.npy", value)
 
     return [episode_idx, action_length]
 
@@ -96,7 +98,7 @@ def pack_episodes(chunk, **kwargs):
     return np.array(action_lengths)
 
 
-def pack_task_parallel(filename, outdir, n_proc, obs_mode, load_count=None):
+def pack_task(filename, outdir, n_proc, obs_mode, load_count=None, parallel=True):
     logging.info(f"Packing task from {filename} to {outdir}")
     json_data = load_json(str(filename).replace(".h5", ".json"))
 
@@ -106,16 +108,19 @@ def pack_task_parallel(filename, outdir, n_proc, obs_mode, load_count=None):
 
     chunks = np.array_split(np.arange(num_episodes), n_proc)
 
-    logging.info(f"Packing {num_episodes} episodes in {n_proc} processes")
-    with ProcessPoolExecutor(max_workers=n_proc) as executor:
-        action_lengths = executor.map(
-            partial(pack_episodes, h5filename=filename, outdir=outdir, obs_mode=obs_mode),
-            enumerate(chunks),
-        )
-    # action_lengths = [
-    #     pack_episodes(chunk, h5filename=filename, outdir=outdir, obs_mode=obs_mode)
-    #     for chunk in enumerate(chunks)
-    # ]
+    if parallel:
+        logging.info(f"Packing {num_episodes} episodes in {n_proc} processes")
+        with ProcessPoolExecutor(max_workers=n_proc) as executor:
+            action_lengths = executor.map(
+                partial(pack_episodes, h5filename=filename, outdir=outdir, obs_mode=obs_mode),
+                enumerate(chunks),
+            )
+    else:
+        logging.info(f"Packing {num_episodes} episodes in a single process")
+        action_lengths = [
+            pack_episodes(chunk, h5filename=filename, outdir=outdir, obs_mode=obs_mode)
+            for chunk in enumerate(chunks)
+        ]
     logging.info(f"Packed {num_episodes} episodes")
 
     action_lengths = np.concatenate(list(action_lengths), axis=0)
@@ -166,13 +171,23 @@ def main():
         help="The number of episodes to load",
         default=None,
     )
+    parser.add_argument(
+        "--debug_run",
+        action="store_true",
+        help="If set, the output will be saved to a different directory",
+        default=False,
+    )
 
     args = parser.parse_args()
 
     logging.info(f"Starting packing process with task: {args.task} and path: {args.path}")
 
     demos_path = Path(args.path) / "demos"
-    out_path = Path(args.path) / "packed_demos"
+    out_path = (
+        Path(args.path) / "packed_demos"
+        if not args.debug_run
+        else Path(args.path) / "packed_demos_debug_run"
+    )
     if not out_path.exists():
         out_path.mkdir()
 
@@ -194,12 +209,13 @@ def main():
             / f"trajectory.{args.obs_mode}.{args.control_mode}.cpu.h5"
         )
 
-        pack_task_parallel(
+        pack_task(
             filename,
             out_task_path,
             n_proc=args.n_proc,
             load_count=args.load_count,
             obs_mode=args.obs_mode,
+            parallel=not args.debug_run,
         )
 
     logging.info("Packing process completed")

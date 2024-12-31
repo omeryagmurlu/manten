@@ -1,11 +1,23 @@
 import functools
 from collections.abc import Callable
 from enum import Enum
-from typing import TypeVar
+from typing import ParamSpec, TypeVar
 
 E = TypeVar("E", bound=Enum)
 
 T = TypeVar("T")
+
+P = ParamSpec("P")
+
+
+def wraps(wrapper: Callable[P, T]):
+    """An implementation of functools.wraps."""
+
+    def decorator(func: Callable) -> Callable[P, T]:
+        func.__doc__ = wrapper.__doc__
+        return func
+
+    return decorator
 
 
 def with_partial(func: Callable[..., T]) -> Callable[..., Callable[..., T]]:

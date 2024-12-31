@@ -1,23 +1,12 @@
 from abc import ABC, abstractmethod
+from typing import Any
 
 import torch
 from torch import nn
 
 from manten.metrics.utils.base_metric import BaseMetric
-
-
-class ModuleAttrMixin(nn.Module):
-    def __init__(self):
-        super().__init__()
-        self.__dummy_variable = nn.Parameter()
-
-    @property
-    def device(self):
-        return next(iter(self.parameters())).device
-
-    @property
-    def dtype(self):
-        return next(iter(self.parameters())).dtype
+from manten.networks.utils.mixins import ModuleAttrMixin
+from manten.utils.utils_hydra import to_object_graceful
 
 
 class BaseAgent(ModuleAttrMixin, nn.Module, ABC):
@@ -40,10 +29,10 @@ class BaseAgent(ModuleAttrMixin, nn.Module, ABC):
             Default implementation calls train_step without gradients
     """
 
-    def __init__(self, metric: BaseMetric, dataset_info: dict | None = None):
+    def __init__(self, metric: BaseMetric, dataset_info: Any = None):
         super().__init__()
         self.metric = metric
-        self.dataset_info = dataset_info
+        self.dataset_info = to_object_graceful(dataset_info)
 
     def reset(self):
         """Resets the metric."""

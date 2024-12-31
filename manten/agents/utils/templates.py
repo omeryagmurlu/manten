@@ -1,11 +1,17 @@
 # pyright: reportAbstractUsage=false, reportIncompatibleMethodOverride=false
 
 from abc import ABC, abstractmethod
+from typing import Any
 
+import optree
 import torch
 
 from manten.agents.utils.base_agent import BaseAgent
 from manten.utils.utils_decorators import with_partial
+
+
+def select_keys(dc, *keys):
+    return {k: dc[k] for k in keys}
 
 
 class AdaptActionsMixin:
@@ -19,8 +25,40 @@ class AdaptActionsMixin:
         return actions
 
 
+class DatasetShapesMixin:
+    """
+    Mixin for agents that need to know the shapes of the observations and actions.
+
+    The attributes are often implemented in the respective templates, so it may be
+    that you don't need to implement them in the agent itself.
+    """
+
+    observations_shape: Any
+    "The shape of the observations. This attribute is often implemented in the respective templates, so it may be that you don't need to implement it in the agent itself."
+    actions_shape: Any
+    "The shape of the actions. This attribute is often implemented in the respective templates, so it may be that you don't need to implement it in the agent itself."
+
+
+class PreTemplateInitMixin:
+    """Mixin for agents that need to run some code before the template init.
+
+    __init__ runs the _pre_template_init method (which can be overridden and thus runs before template init)
+    """
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self._pre_template_init()
+
+    def _pre_template_init(self):
+        """This is usually implemented in templates."""
+
+
+class AgentActionTemplateMixins(AdaptActionsMixin, DatasetShapesMixin, PreTemplateInitMixin):
+    """Combined mixins"""
+
+
 # see an example agent for usage
-class BatchObservationActionAgentTemplate(AdaptActionsMixin, ABC):
+class BatchObservationActionAgentTemplate(AgentActionTemplateMixins, ABC):
     @staticmethod
     @with_partial
     def make_agent(
@@ -43,6 +81,19 @@ class BatchObservationActionAgentTemplate(AdaptActionsMixin, ABC):
 
                 self.__evaluation_metric_cls = evaluation_metric_cls
                 self.__evaluation_stats_cls = evaluation_stats_cls
+
+            def _pre_template_init(self):
+                self.actions_shape = self.__list_to_size(self.dataset_info["actions_shape"])
+                self.observations_shape = self.__list_to_size(
+                    self.dataset_info["observations_shape"]
+                )
+                super()._pre_template_init()
+
+            @staticmethod
+            def __list_to_size(cont):
+                return optree.tree_map(
+                    lambda x: torch.Size(x), cont, is_leaf=lambda x: isinstance(x, list)
+                )
 
             @torch.no_grad()
             def predict_actions(self, *, observations):
@@ -107,7 +158,7 @@ class BatchObservationActionAgentTemplate(AdaptActionsMixin, ABC):
         raise NotImplementedError
 
 
-class BatchStateObservationActionAgentTemplate(AdaptActionsMixin, ABC):
+class BatchStateObservationActionAgentTemplate(AgentActionTemplateMixins, ABC):
     @staticmethod
     @with_partial
     def make_agent(
@@ -116,6 +167,10 @@ class BatchStateObservationActionAgentTemplate(AdaptActionsMixin, ABC):
         # ObsActAgent -> BSOAATmplToBOAATmpl -> SObsActTmpl (# just to get default impl -> ObsActTmpl)
         @BatchObservationActionAgentTemplate.make_agent(*args, **kwargs)
         class BSOAATmplToBOAATmpl(template_cls):
+            def _pre_template_init(self):
+                self.observations_shape = self.observations_shape["state_obs"]
+                super()._pre_template_init()
+
             def predict_actions_from_state(self, state_obs):
                 return self.predict_actions(observations={"state_obs": state_obs})
 
@@ -140,7 +195,7 @@ class BatchStateObservationActionAgentTemplate(AdaptActionsMixin, ABC):
         raise NotImplementedError
 
 
-class BatchRGBObservationActionAgentTemplate(AdaptActionsMixin, ABC):
+class BatchRGBObservationActionAgentTemplate(AgentActionTemplateMixins, ABC):
     @staticmethod
     @with_partial
     def make_agent(
@@ -148,22 +203,29 @@ class BatchRGBObservationActionAgentTemplate(AdaptActionsMixin, ABC):
     ):
         @BatchObservationActionAgentTemplate.make_agent(*args, **kwargs)
         class BRGBOAATmplToBOAATmpl(template_cls):
+            def _pre_template_init(self):
+                self.observations_shape = select_keys(
+                    self.observations_shape, "rgb_obs", "state_obs"
+                )
+
             def compute_train_gt_and_pred(self, observations, actions):
                 rgb_obs = observations["rgb_obs"]
-                return super().compute_train_gt_and_pred(rgb_obs, actions)
+                state_obs = observations["state_obs"]
+                return super().compute_train_gt_and_pred(rgb_obs, state_obs, actions)
 
             def predict_actions(self, observations):
                 rgb_obs = observations["rgb_obs"]
-                return super().predict_actions(rgb_obs)
+                state_obs = observations["state_obs"]
+                return super().predict_actions(rgb_obs, state_obs)
 
         return BRGBOAATmplToBOAATmpl
 
     @abstractmethod
-    def predict_actions(self, rgb_obs: torch.Tensor) -> torch.Tensor:
+    def predict_actions(self, rgb_obs: torch.Tensor, state_obs: torch.Tensor) -> torch.Tensor:
         raise NotImplementedError
 
     @abstractmethod
     def compute_train_gt_and_pred(
-        self, rgb_obs: torch.Tensor, actions: torch.Tensor
+        self, rgb_obs: torch.Tensor, state_obs: torch.Tensor, actions: torch.Tensor
     ) -> tuple[torch.Tensor, torch.Tensor]:
         raise NotImplementedError

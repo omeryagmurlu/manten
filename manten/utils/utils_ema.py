@@ -1,5 +1,8 @@
+from diffusers.training_utils import EMAModel
+
+
 class EMA:
-    def __init__(self, manager, agent, accelerator):
+    def __init__(self, manager: EMAModel, agent, accelerator):
         agent = accelerator.prepare(agent)
         accelerator.register_for_checkpointing(manager)
 

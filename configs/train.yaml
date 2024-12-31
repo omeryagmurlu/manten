@@ -57,11 +57,13 @@ accelerator_init_trackers:
 # _lr: 0.0003 # 3e-4
 _lr: ??? #0.001 # 1e-3
 _weight_decay: ??? #0.0003 #0.000006
+_adamw_betas: [0.9, 0.999]
 optimizer_configurator:
   _target_: manten.utils.optimizer_configurator.OptimizerConfigurator
   default_params_config:
     lr: ${_lr}
     weight_decay: ${_weight_decay}
+    betas: ${_adamw_betas}
   params_configs:
     []
     # - contains_substrings:
@@ -74,6 +76,7 @@ optimizer:
   _target_: torch.optim.AdamW
   lr: ${_lr}
   weight_decay: ${_weight_decay}
+  betas: ${_adamw_betas}
 lr_scheduler:
   _target_: diffusers.optimization.get_scheduler
   name: constant
