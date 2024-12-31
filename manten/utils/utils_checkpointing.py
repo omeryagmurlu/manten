@@ -10,9 +10,9 @@ def load_model_from_safetensors(model, path, device=None):
     from safetensors.torch import load_model
 
     if device is not None:
-        load_model(model, path, device=device)
+        load_model(model, path, device=device, strict=False)
     else:
-        load_model(model, path)
+        load_model(model, path, strict=False)
     logger.info("Loaded safetensors from %s", path)
 
 

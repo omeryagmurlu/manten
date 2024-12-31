@@ -23,8 +23,15 @@ def get_to_remove_indices(pcd):
 
 def process_observation_from_raw(obs, obs_mode, image_size: int = 128, cam=None):
     if obs_mode == "state":
-        retval = {"state_obs": obs}
-    elif obs_mode == "pointcloud":
+        return {"state_obs": obs}
+
+    paths, elems, _ = optree.tree_flatten_with_path(
+        {**obs["sensor_param"], **obs["agent"], **obs["extra"]}
+    )
+    paths = [".".join(path) for path in paths]
+    extra_elems = dict(zip(paths, elems, strict=False))
+
+    if obs_mode == "pointcloud":
         pcd = obs["pointcloud"]["xyzw"]
 
         if cam is None:
@@ -38,13 +45,7 @@ def process_observation_from_raw(obs, obs_mode, image_size: int = 128, cam=None)
 
         to_remove_indices = get_to_remove_indices(pcd)
 
-        paths, elems, _ = optree.tree_flatten_with_path(
-            {**obs["sensor_param"], **obs["agent"], **obs["extra"]}
-        )
-        paths = [".".join(path) for path in paths]
-        extra_elems = dict(zip(paths, elems, strict=False))
-
-        retval = {
+        return {
             **extra_elems,
             "rgb_obs": einops.rearrange(
                 obs["pointcloud"]["rgb"],
@@ -57,8 +58,11 @@ def process_observation_from_raw(obs, obs_mode, image_size: int = 128, cam=None)
             "pcd_obs": pcd[..., :3],
             "pcd_mask": ~to_remove_indices,
         }
+    elif obs_mode == "rgb":
+        rgbs = optree.tree_flatten(obs["sensor_data"])[0]
+        return {
+            **extra_elems,
+            "rgb_obs": einops.rearrange(rgbs, "cam ix h w c -> ix cam h w c"),
+        }
 
-    else:
-        raise NotImplementedError(f"obs_mode {obs_mode} not implemented")
-
-    return retval
+    raise ValueError(f"obs_mode {obs_mode} not recognized")

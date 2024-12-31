@@ -4,7 +4,7 @@ defaults:
   - common
 
 training:
-  num_epochs: 3
+  num_epochs: 1
   num_global_steps: .inf
   max_steps: 3
   sanity_check: 2
