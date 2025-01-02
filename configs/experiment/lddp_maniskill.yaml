@@ -3,6 +3,7 @@
 defaults:
   - /agent: lowdim_diffusion_policy
   - /datamodule: maniskill
+  - /tasks/maniskill_tasks@task_spec: push_t_v1
 
 project_name: manten_maniskill_${datamodule._task}
 
@@ -34,8 +35,7 @@ lr_scheduler:
   num_training_steps: ${training.num_global_steps}
 
 datamodule:
-  # _task: PegInsertionSide-v1
-  _task: PickCube-v1
+  _task: ${task_spec.env_id}
   _pack_root: /home/i53/student/yagmurlu/code/manten/data/maniskill2/packed_demos
   _obs_horizon: 2
   _pred_horizon: 16
@@ -63,7 +63,7 @@ custom_evaluator:
     obs_mode: ${datamodule._obs_mode}
   num_eval_episodes: 105
   num_envs: 15
-  sim_backend: cpu
+  sim_backend: ${task_spec.sim_backend}
   env_id: ${datamodule._task}
   env_kwargs:
     control_mode: ${datamodule._control_mode}

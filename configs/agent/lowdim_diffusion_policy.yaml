@@ -4,11 +4,6 @@ agent:
   metric:
     _target_: manten.metrics.dummy_metric.MSELossDummyMetric
   act_horizon: ???
-  # # These can be set from dataset info
-  # obs_horizon: ???
-  # pred_horizon: ??? # 16->8 leads to worse performance, maybe it is like generate a half image; 16->32, improvement is very marginal
-  # act_dim: 7
-  # observation_shape: ??? # [42]
   diffusion_step_embed_dim: 64
   unet_dims: [64, 128, 256] # default setting is about ~4.5M params
   n_groups: 8 # jigu says it is better to let each group have at least 8 channels; it seems 4 and 8 are simila

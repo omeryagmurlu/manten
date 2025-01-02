@@ -69,7 +69,7 @@ custom_evaluator:
     rgb_modality_keys: ${task_spec.rgb_modality_keys}
   num_eval_episodes: 105
   num_envs: 15
-  sim_backend: cpu
+  sim_backend: ${task_spec.sim_backend}
   env_id: ${datamodule._task}
   env_kwargs:
     control_mode: ${datamodule._control_mode}

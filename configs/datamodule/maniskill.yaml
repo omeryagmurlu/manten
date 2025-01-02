@@ -7,8 +7,8 @@ _pack_root: ???
 _obs_horizon: ???
 _pred_horizon: ???
 _obs_mode: ??? # "state", "pointcloud", "rgbd"
-_state_modality_keys: ???
-_rgb_modality_keys: ???
+_state_modality_keys: null
+_rgb_modality_keys: null
 _control_mode: ???
 _load_count: null
 

@@ -5,8 +5,8 @@ defaults:
 
 agent_creation:
   load_agent_kwargs:
-    train_folder: /home/i53/student/yagmurlu/code/manten/outputs/debug/2024-12-31/05-13-07/accelerate
-    use_ema: False
+    train_folder: /home/i53/student/yagmurlu/code/manten/outputs/training/manten_maniskill_PickCube-v1/2024-12-31/06-55-11/accelerate
+    # use_ema: False
   agent_wrapper:
     _target_: manten_evaluation.maniskill2.agent_wrappers.lddp.LDDPAgentWrapper
     obs_mode: ${evaluator.env_kwargs.obs_mode}
@@ -18,7 +18,7 @@ evaluator:
   _target_: manten_evaluation.maniskill2.lib.evaluation.ManiskillEvaluation
   num_eval_episodes: 60
   num_envs: 15
-  sim_backend: cpu
+  sim_backend: ${task_spec.sim_backend}
   env_id: ${task_spec.env_id}
   env_kwargs:
     control_mode: pd_ee_delta_pose

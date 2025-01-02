@@ -177,6 +177,20 @@ def main():
         help="If set, the output will be saved to a different directory",
         default=False,
     )
+    parser.add_argument(
+        "--demo_type",
+        type=str,
+        required=False,
+        help="The type of the demo",
+        default="motionplanning",
+    )
+    parser.add_argument(
+        "--sim_backend",
+        type=str,
+        required=False,
+        help="The simulation backend",
+        default="cpu",
+    )
 
     args = parser.parse_args()
 
@@ -205,8 +219,8 @@ def main():
 
         filename = (
             task_path
-            / "motionplanning"
-            / f"trajectory.{args.obs_mode}.{args.control_mode}.cpu.h5"
+            / args.demo_type
+            / f"trajectory.{args.obs_mode}.{args.control_mode}.{args.sim_backend}.h5"
         )
 
         pack_task(

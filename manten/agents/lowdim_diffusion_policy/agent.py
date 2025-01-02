@@ -16,46 +16,38 @@ class LowdimDiffusionPolicyAgent(
         self,
         *,
         act_horizon,
-        obs_horizon=None,
-        pred_horizon=None,
         noise_scheduler,
         num_diffusion_iters,
         diffusion_step_embed_dim=None,
         unet_dims=None,
         n_groups=None,
-        actions_shape=None,
-        observations_shape=None,
         **kwargs,
     ):
         super().__init__(**kwargs)
-        if obs_horizon is None:
-            obs_horizon = self.dataset_info.obs_horizon
-        if pred_horizon is None:
-            pred_horizon = self.dataset_info.pred_horizon
-
-        if actions_shape is not None:
-            self.actions_shape = actions_shape
-        if observations_shape is not None:
-            self.observations_shape = observations_shape
-
-        assert self.actions_shape[-2] == pred_horizon
-
-        self.obs_horizon = obs_horizon
         self.act_horizon = act_horizon
-        self.pred_horizon = pred_horizon
         self.num_diffusion_iters = num_diffusion_iters
         self.noise_scheduler = noise_scheduler
 
-        self.act_dim = self.actions_shape[-1]
         self.noise_pred_net = ConditionalUnet1D(
             input_dim=self.act_dim,  # act_horizon is not used (U-Net doesn't care)
-            global_cond_dim=(  # because of sliding window
-                obs_horizon * self.observations_shape[-1]
-            ),
+            global_cond_dim=(torch.prod(torch.tensor(self.observations_shape))),
+            # obs_horizon * obs_dim
             diffusion_step_embed_dim=diffusion_step_embed_dim,
             down_dims=unet_dims,
             n_groups=n_groups,
         )
+
+    @property
+    def obs_horizon(self):
+        return self.dataset_info["obs_horizon"]
+
+    @property
+    def pred_horizon(self):
+        return self.dataset_info["pred_horizon"]
+
+    @property
+    def act_dim(self):
+        return self.actions_shape[-1]
 
     def compute_train_gt_and_pred(self, state_obs, actions):
         obs_seq = state_obs
