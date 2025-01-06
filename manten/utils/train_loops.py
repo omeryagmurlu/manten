@@ -276,6 +276,7 @@ class TrainLoops:
         ):
             return
 
+        self.free_memory()
         self.accelerator.wait_for_everyone()
         if self.accelerator.is_main_process:
             proc_name = f"custom_eval{'-ema' if use_ema else ''}"
@@ -306,6 +307,7 @@ class TrainLoops:
             self.accelerator.log(custom_eval_logs, step=self.state.global_step)
             print(tabulate(custom_eval_logs.items()))
 
+        self.free_memory()
         self.accelerator.wait_for_everyone()
 
     def sanity_check_loop(self):
@@ -478,3 +480,13 @@ class TrainLoops:
             (self.state.global_step + 1) % n == 0
             or (curr_train_step + 1) == self.len_train_loop  # or end of epoch
         )
+
+    @staticmethod
+    def free_memory():
+        import gc
+
+        gc.collect()
+        torch.cuda.empty_cache()
+        gc.collect()
+        torch.cuda.empty_cache()
+        gc.collect()

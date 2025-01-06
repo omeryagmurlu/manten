@@ -23,7 +23,7 @@ class Encoder(nn.Module):
         self,
         backbone="clip",
         image_size=(256, 256),
-        embedding_dim=60,
+        embedding_dim=64,
         num_sampling_level=3,
         nhist=3,
         num_attn_heads=8,
@@ -56,6 +56,7 @@ class Encoder(nn.Module):
             # Fine RGB features are the 1st layer of the feature pyramid
             # at 1/2 resolution (64x64)
             self.coarse_feature_map = ["res2", "res1", "res1", "res1"]
+            self.feature_map_pyramid = self.coarse_feature_map
             self.downscaling_factor_pyramid = [4, 2, 2, 2]
         elif self.image_size == (256, 256):
             # Coarse RGB features are the 3rd layer of the feature pyramid
@@ -167,7 +168,7 @@ class Encoder(nn.Module):
 
         return gripper_feats, gripper_pos
 
-    def encode_images(self, rgb, pcd):
+    def encode_images(self, rgb, pcd, mask=None):
         """
         Compute visual features/pos embeddings at different scales.
 
@@ -191,9 +192,13 @@ class Encoder(nn.Module):
 
         # Treat different cameras separately
         pcd = einops.rearrange(pcd, "bt ncam c h w -> (bt ncam) c h w")
+        if mask is not None:
+            mask = einops.rearrange(mask, "bt ncam c h w -> (bt ncam) c h w")
 
         rgb_feats_pyramid = []
         pcd_pyramid = []
+        if mask is not None:
+            mask_pyramid = []
         for i in range(self.num_sampling_level):
             # Isolate level's visual features
             rgb_features_i = rgb_features[self.feature_map_pyramid[i]]
@@ -201,19 +206,32 @@ class Encoder(nn.Module):
             # Interpolate xy-depth to get the locations for this level
             feat_h, feat_w = rgb_features_i.shape[-2:]
             pcd_i = F.interpolate(pcd, (feat_h, feat_w), mode="bilinear")
-
-            # Merge different cameras for clouds, separate for rgb features
-            h, w = pcd_i.shape[-2:]
             pcd_i = einops.rearrange(
                 pcd_i, "(bt ncam) c h w -> bt (ncam h w) c", ncam=num_cameras
             )
             rgb_features_i = einops.rearrange(
-                rgb_features_i, "(bt ncam) c h w -> bt ncam c h w", ncam=num_cameras
+                rgb_features_i, "(bt ncam) c h w -> bt (ncam h w) c", ncam=num_cameras
             )
+
+            if mask is not None:
+                scale_factor = pcd.shape[-2] // feat_h
+                mask_i = -F.max_pool2d(-mask.float(), kernel_size=scale_factor) > (1 / 2)
+                mask_i = einops.rearrange(
+                    mask_i, "(bt ncam) c h w -> bt (ncam h w) c", ncam=num_cameras
+                )
+
+                mask_pyramid.append(mask_i)
+
+                # also zero pcd and rgb features to cut the computation graph
+                pcd_i = pcd_i * mask_i
+                rgb_features_i = rgb_features_i * mask_i
 
             rgb_feats_pyramid.append(rgb_features_i)
             pcd_pyramid.append(pcd_i)
 
+        if mask is not None:
+            # we've zeroed out the features, but return the mask anyways, maybe we can cut the graph somewhere higher too
+            return (rgb_feats_pyramid, pcd_pyramid, mask_pyramid)
         return (rgb_feats_pyramid, pcd_pyramid)
 
     def encode_instruction(self, instruction):
@@ -235,11 +253,18 @@ class Encoder(nn.Module):
         instr_dummy_pos = self.relative_pe_layer(instr_dummy_pos)
         return instr_feats, instr_dummy_pos
 
-    def run_fps(self, context_features, context_pos):
+    def run_fps(self, context_features, context_pos, keep_mask=None):
         # context_features (Np, B, F)
+        # keep_mask (Np, B)
         # context_pos (B, Np, F, 2)
         # outputs of analogous shape, with smaller Np
         npts, bs, ch = context_features.shape
+
+        if keep_mask is not None:
+            keep_mask = keep_mask.squeeze(-1)
+            context_features = context_features.clone()
+            # context_features[~keep_mask] = float('inf') # works fine with dgl, not with quickfps
+            context_features[~keep_mask] = 0  # works fine with both
 
         # Sample points with FPS
         sampled_inds = dgl_geo.farthest_point_sampler(

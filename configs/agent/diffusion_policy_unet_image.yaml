@@ -4,7 +4,10 @@ agent:
   act_horizon: 8
   num_diffusion_iters: 100
   metric:
-    _target_: manten.metrics.dummy_metric.MSELossDummyMetric
+    _target_: manten.metrics.traj_action_metric.MSELossPoseBCEGripperMetric
+    pos_weight: 15.0
+    rot_weight: 5.0
+    gripper_weight: 1.0
   noise_scheduler:
     _target_: diffusers.schedulers.DDPMScheduler
     num_train_timesteps: 100

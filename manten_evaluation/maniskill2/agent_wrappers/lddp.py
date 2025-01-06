@@ -4,8 +4,12 @@ import einops
 import torch
 from optree import tree_flatten, tree_map, tree_unflatten
 
+from manten.networks.utils.rotation_transformer import RotationTransformer
 from manten_evaluation.maniskill2.lib.utils_maniskill_common import (
+    apply_static_transforms,
+    back_transform_episode_actions,
     process_observation_from_raw,
+    transform_episode_obs,
 )
 
 FULL_OBS_MODALITIES = MappingProxyType(
@@ -26,6 +30,7 @@ class LDDPAgentWrapper:
         obs_modalities=None,
         state_modality_keys=None,
         rgb_modality_keys=None,
+        rotation_transform=None,
         device="cuda",
     ):
         if obs_modalities is None:
@@ -42,52 +47,26 @@ class LDDPAgentWrapper:
         self.__rgb_modality_keys = rgb_modality_keys
         self.__device = device
 
+        if rotation_transform is not None:
+            self.__rotation_transformer = RotationTransformer(
+                from_rep="euler_angles", to_rep=rotation_transform, from_convention="XYZ"
+            )
+        else:
+            self.__rotation_transformer = None
+
     def __getattr__(self, attr):
         return getattr(self.__agent, attr)
 
-    def __get_aggregated_state(self, loaded_obs):
-        states = [loaded_obs[smod] for smod in self.__state_modality_keys]
-        return torch.cat(states, -1)
-
-    def __proc_obs(self, obs):  # noqa: C901, PLR0912
+    def __proc_obs(self, obs):
         loaded_obs = process_observation_from_raw(obs, self.__obs_mode)
-        obs_dict = {}
-        for key in self.__obs_modalities:
-            if key == "state_obs":
-                if self.__obs_mode == "state":
-                    # there is an np array called state_obs
-                    obs_dict[key] = loaded_obs[key]
-                else:
-                    # we need to aggregate the state modalities into one
-                    obs_dict[key] = self.__get_aggregated_state(loaded_obs)
-            elif key == "rgb_obs":
-                if self.__obs_mode == "rgb":
-                    _, ncam, h, w, c = loaded_obs[key].shape
-                    if ncam != len(self.__rgb_modality_keys):
-                        raise ValueError(
-                            f"Number of cameras in rgb_obs ({ncam}) does not match the number of rgb_modality_keys ({len(self.__rgb_modality_keys)})"
-                        )
-                    obs_dict[key] = {
-                        k: loaded_obs[key][:, cam_i]
-                        for cam_i, k in enumerate(self.__rgb_modality_keys)
-                    }
-                else:
-                    # for pcd the colors are in rgb_obs
-                    obs_dict[key] = loaded_obs[key]
-            else:
-                obs_dict[key] = loaded_obs[key]
-
-        if "pcd_obs" in self.__obs_modalities:
-            obs_dict["pcd_mask"] = loaded_obs["pcd_mask"]
-            # TODO: also load camera intrinsics/extrinsics for stuff
-
-        if self.__obs_mode == "rgb":
-            for cam_key, cam_v in obs_dict["rgb_obs"].items():
-                cam = einops.rearrange(cam_v, "t h w c -> t c h w")
-                obs_dict["rgb_obs"][cam_key] = cam.float() / 255.0
-        elif self.__obs_mode == "pointcloud":
-            raise NotImplementedError
-
+        obs_dict = transform_episode_obs(
+            loaded_obs,
+            obs_mode=self.__obs_mode,
+            obs_modalities=self.__obs_modalities,
+            rgb_modality_keys=self.__rgb_modality_keys,
+            state_modality_keys=self.__state_modality_keys,
+        )
+        obs_dict = apply_static_transforms(obs_dict, obs_mode=self.__obs_mode)
         return obs_dict
 
     def __obs_dict(self, obs):
@@ -121,6 +100,12 @@ class LDDPAgentWrapper:
     def transpose_list_of_lists(outer):
         return [[inner[i] for inner in outer] for i in range(len(outer[0]))]
 
+    def __proc_actions(self, actions):
+        actions = back_transform_episode_actions(
+            actions, rotation_transformer=self.__rotation_transformer
+        )
+        return actions
+
     def step(self, obs):
         obs = tree_map(
             lambda x: x.to(self.__device)
@@ -128,4 +113,49 @@ class LDDPAgentWrapper:
             else torch.tensor(x, device=self.__device),
             obs,
         )
-        return self.__agent.predict_actions(observations=self.__obs_dict(obs))
+        actions = self.__agent.predict_actions(observations=self.__obs_dict(obs))
+        actions = self.__proc_actions(actions)
+        return actions
+
+
+if __name__ == "__main__":
+    import functools
+
+    from manten_evaluation.maniskill2.lib.evaluation import make_eval_envs
+    from manten_evaluation.maniskill2.lib.utils_wrappers import TreeFrameStack
+
+    env = make_eval_envs(
+        env_id="PickCube-v1",
+        num_envs=2,
+        sim_backend="cpu",
+        wrappers=[functools.partial(TreeFrameStack, num_stack=2)],
+        env_kwargs={
+            "control_mode": "pd_ee_delta_pose",
+            "reward_mode": "sparse",
+            "obs_mode": "rgb",
+            "render_mode": "rgb_array",
+            # max_episode_steps="300",
+            "max_episode_steps": 100,
+        },
+    )
+
+    class AgentDummy:
+        def predict_actions(self, *, observations):  # noqa: ARG002
+            act = torch.randn((1, 8, 10))
+            print(act.shape)
+            return act
+
+    agent = LDDPAgentWrapper(
+        agent=AgentDummy(),
+        obs_mode="rgb",
+        state_modality_keys=["goal_pos"],
+        rgb_modality_keys=["camera1"],
+        rotation_transform="rotation_6d",
+    )
+
+    obs, info = env.reset()
+    print(obs)
+    actions = agent.step(obs)
+    print(actions.shape)
+    obs, rew, _, _, info = env.step(actions.cpu().numpy())  # not a vec env?
+    print(obs, rew, info)

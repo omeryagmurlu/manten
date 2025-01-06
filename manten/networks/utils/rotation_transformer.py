@@ -11,11 +11,12 @@ T = TypeVar("T", np.ndarray, torch.Tensor)
 
 class RotationTransformer:
     valid_reps = ("axis_angle", "euler_angles", "quaternion", "rotation_6d", "matrix")
+    dims = (3, 3, 4, 6, None)
 
     def __init__(
         self,
-        from_rep="axis_angle",
-        to_rep="rotation_6d",
+        from_rep,
+        to_rep,
         from_convention=None,
         to_convention=None,
     ):
@@ -58,6 +59,8 @@ class RotationTransformer:
 
         self.forward_funcs = forward_funcs
         self.inverse_funcs = inverse_funcs
+        self.from_rep = from_rep
+        self.to_rep = to_rep
 
     @staticmethod
     def _apply_funcs(x: T, funcs: list) -> T:
@@ -78,9 +81,23 @@ class RotationTransformer:
     def inverse(self, x: T) -> T:
         return self._apply_funcs(x, self.inverse_funcs)
 
+    @property
+    def to_dim(self):
+        td = self.dims[self.valid_reps.index(self.to_rep)]
+        if td is None:
+            raise ValueError("Cannot determine dimension of the target representation")
+        return td
+
+    @property
+    def from_dim(self):
+        fd = self.dims[self.valid_reps.index(self.from_rep)]
+        if fd is None:
+            raise ValueError("Cannot determine dimension of the source representation")
+        return fd
+
 
 def test():
-    tf = RotationTransformer()
+    tf = RotationTransformer("axis_angle", "rotation_6d")
 
     rotvec = np.random.uniform(-2 * np.pi, 2 * np.pi, size=(1000, 3))  # noqa: NPY002
     rot6d = tf.forward(rotvec)

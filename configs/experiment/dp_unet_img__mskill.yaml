@@ -11,14 +11,14 @@ _save_every_n_gs: 10000
 _detailed_metrics_every_n_gs: 10000
 _skip_first_n_gs: 0
 training:
-  num_global_steps: 120000
+  num_global_steps: 60000
   vis_metric_key: "pos_l2"
   eval_train:
     max_steps: 6
   eval_test:
     max_steps: 6
   custom_eval:
-    every_n_global_steps: 120000
+    every_n_global_steps: 60000
     skip_first_global_steps: 0
 
   # sanity_check: False
@@ -46,6 +46,7 @@ datamodule:
   _pred_horizon: 16
   _obs_mode: rgb
   _control_mode: pd_ee_delta_pose
+  _rotation_transform: rotation_6d
 
   _batch_size: 512
   _train_target_iters: ${_detailed_metrics_every_n_gs}
@@ -65,8 +66,9 @@ custom_evaluator:
     _target_: manten_evaluation.maniskill2.agent_wrappers.lddp.LDDPAgentWrapper
     _partial_: True
     obs_mode: ${datamodule._obs_mode}
-    state_modality_keys: ${task_spec.state_modality_keys}
-    rgb_modality_keys: ${task_spec.rgb_modality_keys}
+    state_modality_keys: ${datamodule._state_modality_keys}
+    rgb_modality_keys: ${datamodule._rgb_modality_keys}
+    rotation_transform: ${datamodule._rotation_transform}
   num_eval_episodes: 105
   num_envs: 15
   sim_backend: ${task_spec.sim_backend}

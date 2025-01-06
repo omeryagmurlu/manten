@@ -206,3 +206,18 @@ class ManiskillEvaluation:
     @property
     def eval_name(self):
         return f"eval-maniskill-{self.env_id}"
+
+
+if __name__ == "__main__":
+    env_kwargs = {
+        "control_mode": "pd_ee_delta_pose",
+        "reward_mode": "sparse",
+        "obs_mode": "rgb",
+        "render_mode": "rgb_array",
+        # max_episode_steps="300",
+        "max_episode_steps": 100,
+    }
+
+    env = gym.make("PickCube-v1", reconfiguration_freq=1, **env_kwargs)
+
+    print(env.observation_space)

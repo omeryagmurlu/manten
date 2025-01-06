@@ -11,6 +11,7 @@ _state_modality_keys: null
 _rgb_modality_keys: null
 _control_mode: ???
 _load_count: null
+_rotation_transform: null
 
 # I hate the following combination of omegaconf interpolations and YAML anchors, but it is what it is
 #
@@ -57,6 +58,7 @@ __1:
       obs_mode: ${...._obs_mode}
       control_mode: ${...._control_mode}
       load_count: ${...._load_count}
+      rotation_transform: ${...._rotation_transform}
 
 datamodule:
   _target_: manten.utils.utils_data.DummyDataModule
@@ -70,6 +72,7 @@ datamodule:
         - ${....._train_target_iters}
   test_dataloader:
     <<: *dataloader_args
+    drop_last: False
     dataset:
       <<: *dataset_args
       train: False

@@ -1,11 +1,13 @@
 from abc import ABC, abstractmethod
 
-from manten.utils.utils_decorators import with_shallow_copy, with_state_dict
+from manten.utils.utils_mixins import shallow_copy_mixin_factory, state_dict_mixin_factory
 
 
-@with_state_dict("ground", "prediction")
-@with_shallow_copy("ground", "prediction")
-class BaseMetric(ABC):
+class BaseMetric(
+    shallow_copy_mixin_factory("ground", "prediction"),
+    state_dict_mixin_factory("ground", "prediction"),
+    ABC,
+):
     def __init__(self):
         self.ground = None
         self.prediction = None
@@ -35,9 +37,12 @@ class BaseMetric(ABC):
         return
 
 
-@with_state_dict("stats")
-@with_shallow_copy("stats")
-class BaseStats(BaseMetric, ABC):
+class BaseStats(
+    shallow_copy_mixin_factory("stats"),
+    state_dict_mixin_factory("stats"),
+    BaseMetric,
+    ABC,
+):
     def __init__(self):
         super().__init__()
         self.stats = None

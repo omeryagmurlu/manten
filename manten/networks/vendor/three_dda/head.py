@@ -22,17 +22,13 @@ class DiffusionHead(nn.Module):
         embedding_dim=60,
         num_attn_heads=8,
         use_instruction=False,
-        rotation_parametrization="quat",
+        rotation_dim=4,
         nhist=3,
         lang_enhanced=False,
     ):
         super().__init__()
         self.use_instruction = use_instruction
         self.lang_enhanced = lang_enhanced
-        if "6D" in rotation_parametrization:
-            rotation_dim = 6  # continuous 6D
-        else:
-            rotation_dim = 4  # quaternion
 
         # Encoders
         self.traj_encoder = nn.Linear(9, embedding_dim)
@@ -49,7 +45,7 @@ class DiffusionHead(nn.Module):
             nn.Linear(embedding_dim, embedding_dim),
         )
         self.traj_time_emb = SinusoidalPosEmb(embedding_dim)
-        self.dim_2d_3d_emb = nn.Embedding(2, embedding_dim)
+        # self.dim_2d_3d_emb = nn.Embedding(2, embedding_dim)
 
         # Attention from trajectory queries to language
         self.traj_lang_attention = nn.ModuleList(
@@ -149,7 +145,7 @@ class DiffusionHead(nn.Module):
         adaln_gripper_feats,
         fps_feats,
         fps_pos,
-        has_3d,
+        # has_3d,
     ):
         """
         Arguments:
@@ -197,7 +193,7 @@ class DiffusionHead(nn.Module):
             fps_feats,
             fps_pos,
             instr_feats,
-            has_3d,
+            # has_3d,
         )
         return (pos_pred, rot_pred, openess_pred)
 
@@ -212,7 +208,7 @@ class DiffusionHead(nn.Module):
         sampled_context_features,
         sampled_rel_context_pos,
         instr_feats,
-        has_3d,
+        # has_3d,
     ):
         """
         Compute the predicted action (position, rotation, opening).
@@ -236,20 +232,22 @@ class DiffusionHead(nn.Module):
         rel_gripper_pos = self.relative_pe_layer(gripper_pcd)
         rel_context_pos = self.relative_pe_layer(context_pcd)
 
-        # 2D vs 3D marker
-        dim_2d_3d = self.dim_2d_3d_emb(has_3d.long())
+        # # 2D vs 3D marker
+        # dim_2d_3d = self.dim_2d_3d_emb(has_3d.long())
 
         # Cross attention from gripper to full context
         gripper_features = self.cross_attn(
             query=gripper_features,
-            value=context_features + dim_2d_3d,
+            value=context_features,
+            # value=context_features + dim_2d_3d,
             query_pos=rel_gripper_pos,
             value_pos=rel_context_pos,
             diff_ts=time_embs,
         )[-1]
 
         # Self attention among gripper and sampled context
-        features = torch.cat([gripper_features, sampled_context_features + dim_2d_3d], 0)
+        # features = torch.cat([gripper_features, sampled_context_features + dim_2d_3d], 0)
+        features = torch.cat([gripper_features, sampled_context_features], 0)
         rel_pos = torch.cat([rel_gripper_pos, sampled_rel_context_pos], 1)
         features = self.self_attn(
             query=features,

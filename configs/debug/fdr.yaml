@@ -3,6 +3,9 @@
 defaults:
   - common
 
+datamodule:
+  _load_count: 100
+
 training:
   num_epochs: 1
   num_global_steps: .inf

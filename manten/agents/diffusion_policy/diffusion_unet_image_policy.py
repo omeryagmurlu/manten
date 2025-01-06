@@ -8,7 +8,7 @@ from torch import nn
 
 from manten.agents.utils.mixins import DatasetActionScalerMixin
 from manten.agents.utils.templates import BatchRGBObservationActionAgentTemplate
-from manten.metrics.dummy_metric import PosTrajMetric, PosTrajStats
+from manten.metrics.traj_action_metric import PosRotGripperMetric, PosRotGripperStats
 from manten.networks.vendor.diffusion_policy.diffusion.conditional_unet1d import (
     ConditionalUnet1D,
 )
@@ -23,7 +23,7 @@ def noop_encoder(*_args, **_kwargs):
 
 
 @BatchRGBObservationActionAgentTemplate.make_agent(
-    evaluation_metric_cls=PosTrajMetric, evaluation_stats_cls=PosTrajStats
+    evaluation_metric_cls=PosRotGripperMetric, evaluation_stats_cls=PosRotGripperStats
 )
 class DiffusionUnetImagePolicy(
     BatchRGBObservationActionAgentTemplate, DatasetActionScalerMixin
@@ -183,7 +183,7 @@ if __name__ == "__main__":
 
     from manten.agents.utils.normalization import MinMaxScaler
     from manten.data.dataset_maniskill import ManiSkillDataset
-    from manten.metrics.dummy_metric import MSELossDummyMetric
+    from manten.metrics.traj_action_metric import MSELossPoseBCEGripperMetric
     from manten.networks.vendor.diffusion_policy.vision.model_getter import get_resnet
 
     dataset = ManiSkillDataset(
@@ -199,11 +199,12 @@ if __name__ == "__main__":
         control_mode="pd_ee_delta_pose",
         use_mmap=True,
         load_count=35,
+        rotation_transform="rotation_6d",
         # use_mmap=False,
     )
 
     noise_scheduler = DDPMScheduler()
-    metric = MSELossDummyMetric()
+    metric = MSELossPoseBCEGripperMetric()
     action_scaler = MinMaxScaler
     rgb_encoder = partial(
         MultiImageObsEncoder,
@@ -216,6 +217,8 @@ if __name__ == "__main__":
         imagenet_norm=True,
     )
     dataset_info = dataset.get_dataset_info()
+
+    print(dataset_info)
 
     pred_net = partial(
         ConditionalUnet1D,

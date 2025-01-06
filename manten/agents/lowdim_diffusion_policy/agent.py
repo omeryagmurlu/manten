@@ -3,11 +3,11 @@ import torch
 from manten.agents.lowdim_diffusion_policy.conditional_unet1d import ConditionalUnet1D
 from manten.agents.utils.mixins import DatasetActionScalerMixin
 from manten.agents.utils.templates import BatchStateObservationActionAgentTemplate
-from manten.metrics.dummy_metric import PosTrajMetric, PosTrajStats
+from manten.metrics.traj_action_metric import PosRotGripperMetric, PosRotGripperStats
 
 
 @BatchStateObservationActionAgentTemplate.make_agent(
-    evaluation_metric_cls=PosTrajMetric, evaluation_stats_cls=PosTrajStats
+    evaluation_metric_cls=PosRotGripperMetric, evaluation_stats_cls=PosRotGripperStats
 )
 class LowdimDiffusionPolicyAgent(
     BatchStateObservationActionAgentTemplate, DatasetActionScalerMixin

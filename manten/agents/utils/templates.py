@@ -229,3 +229,56 @@ class BatchRGBObservationActionAgentTemplate(AgentActionTemplateMixins, ABC):
         self, rgb_obs: torch.Tensor, state_obs: torch.Tensor, actions: torch.Tensor
     ) -> tuple[torch.Tensor, torch.Tensor]:
         raise NotImplementedError
+
+
+class BatchPCDObservationActionAgentTemplate(AgentActionTemplateMixins, ABC):
+    @staticmethod
+    @with_partial
+    def make_agent(
+        template_cls: type["BatchPCDObservationActionAgentTemplate"], *args, **kwargs
+    ):
+        @BatchObservationActionAgentTemplate.make_agent(*args, **kwargs)
+        class BPCDOAATmplToBOAATmpl(template_cls):
+            def _pre_template_init(self):
+                self.observations_shape = select_keys(
+                    self.observations_shape, "pcd_obs", "rgb_obs", "pcd_mask", "state_obs"
+                )
+
+            def compute_train_gt_and_pred(self, observations, actions):
+                pcd_obs = observations["pcd_obs"]
+                rgb_obs = observations["rgb_obs"]
+                pcd_mask = observations["pcd_mask"]
+                state_obs = observations["state_obs"]
+                return super().compute_train_gt_and_pred(
+                    pcd_obs, rgb_obs, pcd_mask, state_obs, actions
+                )
+
+            def predict_actions(self, observations):
+                pcd_obs = observations["pcd_obs"]
+                rgb_obs = observations["rgb_obs"]
+                pcd_mask = observations["pcd_mask"]
+                state_obs = observations["state_obs"]
+                return super().predict_actions(pcd_obs, rgb_obs, pcd_mask, state_obs)
+
+        return BPCDOAATmplToBOAATmpl
+
+    @abstractmethod
+    def predict_actions(
+        self,
+        pcd_obs: torch.Tensor,
+        rgb_obs: torch.Tensor,
+        pcd_mask: torch.Tensor,
+        state_obs: torch.Tensor,
+    ) -> torch.Tensor:
+        raise NotImplementedError
+
+    @abstractmethod
+    def compute_train_gt_and_pred(
+        self,
+        pcd_obs: torch.Tensor,
+        rgb_obs: torch.Tensor,
+        pcd_mask: torch.Tensor,
+        state_obs: torch.Tensor,
+        actions: torch.Tensor,
+    ) -> tuple[torch.Tensor, torch.Tensor]:
+        raise NotImplementedError
