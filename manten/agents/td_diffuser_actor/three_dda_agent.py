@@ -11,7 +11,7 @@ from manten.metrics.traj_action_metric import (
 )
 
 
-def convert2rel(pcd, curr_gripper):
+def convert2rel(pcd, curr_gripper, *others):
     """Convert coordinate system relative to current gripper."""
     center = curr_gripper[:, -1, :3]  # (batch_size, 3)
     bs = center.shape[0]
@@ -19,7 +19,8 @@ def convert2rel(pcd, curr_gripper):
     pcd = pcd - center.view(bs, *mids, 3, 1, 1)
     curr_gripper = curr_gripper.clone()
     curr_gripper[..., :3] = curr_gripper[..., :3] - center.view(bs, 1, 3)
-    return pcd, curr_gripper
+    others = [other[..., :3] - center.view(bs, 1, 3) for other in others]
+    return (pcd, curr_gripper, *others)
 
 
 @BatchPCDObservationActionAgentTemplate.make_agent(
@@ -35,25 +36,43 @@ class ThreeDDAAgent(
         rotation_noise_scheduler,
         encoder,
         noise_model,
+        embedding_dim=192,
         relative=True,  # center the pcd around tcp
         n_inference_steps=10,
         tcp_pose_key=None,
+        act_horizon=8,
         **kwargs,
     ):
         super().__init__(**kwargs)
         self.position_noise_scheduler = position_noise_scheduler
         self.rotation_noise_scheduler = rotation_noise_scheduler
-        self.encoder = encoder(nhist=self.obs_horizon)
-        self.noise_model = noise_model(rotation_dim=self.rotation_dim, nhist=self.obs_horizon)
 
         self.relative = relative
         self.use_instruction = False  # will come from dataset
         self.n_inference_steps = n_inference_steps
+        self.act_horizon = act_horizon
 
         if tcp_pose_key is None:
             self.tcp_pose_key = self.dataset_info["tcp_pose_key"]
         else:
             self.tcp_pose_key = tcp_pose_key
+
+        remaining_state_keys = set(self.observations_shape["state_obs"].keys())
+        remaining_state_keys.remove(self.tcp_pose_key)
+        self.encoder_custom_state_shapes = {
+            key: self.observations_shape["state_obs"][key][1:] for key in remaining_state_keys
+        }
+
+        self.encoder = encoder(
+            nhist=self.obs_horizon,
+            embedding_dim=embedding_dim,
+            custom_state_shapes=self.encoder_custom_state_shapes,
+        )
+        self.noise_model = noise_model(
+            rotation_dim=self.rotation_dim,
+            nhist=self.obs_horizon,
+            embedding_dim=embedding_dim,
+        )
 
     @property
     def obs_horizon(self):
@@ -143,8 +162,11 @@ class ThreeDDAAgent(
             complete_traj = self.action_scaler.descale(complete_traj)
 
         start = self.obs_horizon - 1
-        end = start + self.pred_horizon
+        end = start + self.act_horizon
         return complete_traj[:, start:end]
+
+    def adapt_actions_from_ds_actions(self, actions):
+        return actions[..., : self.act_horizon, :]
 
     def encode_observations(self, pcd_obs, rgb_obs, pcd_mask, state_obs):
         # n_cam = len(pcd_obs)
@@ -159,20 +181,26 @@ class ThreeDDAAgent(
             list(rgb_obs.values()), "cam b obs_h c h w -> b obs_h cam c h w"
         )
         curr_gripper = state_obs[self.tcp_pose_key]
+        custom_states = {key: state_obs[key] for key in self.encoder_custom_state_shapes}
 
-        # normalization
+        # position (3) normalization
         curr_gripper = self.pcd_scaler.scale(curr_gripper[..., :3])
         pcd_obs = self.pcd_scaler.scale(pcd_obs)
+        if "goal_pos" in custom_states:
+            custom_states["goal_pos"] = self.pcd_scaler.scale(custom_states["goal_pos"])
 
         if self.relative:
-            pcd_obs, curr_gripper = convert2rel(pcd_obs, curr_gripper)
+            if "goal_pos" not in custom_states:
+                pcd_obs, curr_gripper = convert2rel(pcd_obs, curr_gripper)
+            else:
+                pcd_obs, curr_gripper, custom_states["goal_pos"] = convert2rel(
+                    pcd_obs, curr_gripper, custom_states["goal_pos"]
+                )
 
         # for now only use last observation for visuals like in the paper
         pcd_obs = pcd_obs[:, -1]
         pcd_mask = pcd_mask[:, -1]
         rgb_obs = rgb_obs[:, -1]
-        # state_obs = state_obs[:, -1]
-        # curr_gripper = curr_gripper[:, -1]
 
         # Compute visual features/positional embeddings at different scales
         rgb_feats_pyramid, pcd_pyramid, mask_pyramid = self.encoder.encode_images(
@@ -183,13 +211,14 @@ class ThreeDDAAgent(
         context = pcd_pyramid[0]
         context_keep_mask = mask_pyramid[0]
 
-        # Encode instruction (B, 53, F)
-        instr_feats = None
-        # instr will be part of state_obs, first 10 dim tcp_pose
-        # if self.use_instruction:
-        #     instr_feats, _ = self.encoder.encode_instruction(instruction)
-        #     # Attention from vision to language
-        #     context_feats = self.encoder.vision_language_attention(context_feats, instr_feats)
+        # # Encode instruction (B, 53, F)
+        # instr_feats = None
+        # # instr will be part of state_obs, first 10 dim tcp_pose
+        # # if self.use_instruction:
+        # #     instr_feats, _ = self.encoder.encode_instruction(instruction)
+        # #     # Attention from vision to language
+        # #     context_feats = self.encoder.vision_language_attention(context_feats, instr_feats)
+        instr_feats = self.encoder.encode_custom_states(custom_states)
 
         # Encode gripper history (B, nhist, F)
         adaln_gripper_feats, _ = self.encoder.encode_curr_gripper(
@@ -225,14 +254,15 @@ if __name__ == "__main__":
     dataset = ManiSkillDataset(
         simulated_length=10000000,
         test_ratio=0.05,
-        task="PegInsertionSide-v1",
+        task="PickCube-v1",
         pack_root="/home/i53/student/yagmurlu/code/manten/data/maniskill2/packed_demos",
         obs_horizon=2,
         pred_horizon=16,
         obs_mode="pointcloud",
-        # state_modality_keys=["goal_pos"],
-        state_modality_keys=["tcp_pose"],
-        rgb_modality_keys=["camera1", "gripper1"],
+        # state_modality_keys=["tcp_pose"],
+        state_modality_keys=["tcp_pose", "goal_pos"],
+        # rgb_modality_keys=["camera1", "gripper1"],
+        rgb_modality_keys=["camera1"],
         control_mode="pd_ee_delta_pose",
         use_mmap=True,
         load_count=3,
@@ -258,7 +288,6 @@ if __name__ == "__main__":
     encoder = partial(
         Encoder,
         backbone="clip",
-        embedding_dim=192,  # needs to be multiple of 3
         num_sampling_level=1,
         num_vis_ins_attn_layers=2,
         fps_subsampling_factor=3,
@@ -274,9 +303,10 @@ if __name__ == "__main__":
 
     noise_model = partial(
         DiffusionHead,
-        embedding_dim=192,
-        use_instruction=False,
-        lang_enhanced=False,
+        # use_instruction=False,
+        # lang_enhanced=False,
+        use_instruction=True,
+        lang_enhanced=True,
     )
 
     agent = ThreeDDAAgent(

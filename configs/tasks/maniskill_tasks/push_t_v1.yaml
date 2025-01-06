@@ -1,4 +1,0 @@
-env_id: push_t_v1
-state_modality_keys: [] # for rgb and pcd
-rgb_modality_keys: [camera1] # for rgb (and maybe pcd but seems like not a problem)
-sim_backend: gpu

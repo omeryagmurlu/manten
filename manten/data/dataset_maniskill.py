@@ -228,11 +228,15 @@ class ManiSkillDataset(Dataset):
                 )
                 pcd_fit = fit_consecutive(masked_pcd, pcd_fit)
 
+        actions_fit = tree_map(lambda x: x.tolist(), actions_fit[0])
+        if pcd_fit is not None:
+            pcd_fit = tree_map(lambda x: x.tolist(), pcd_fit[0])
+
         sample_batch = self[0]
 
         pcd_stats = (
             {
-                "pcd_stats": pcd_fit[0],
+                "pcd_stats": pcd_fit,
             }
             if pcd_fit is not None
             else {}
@@ -243,7 +247,7 @@ class ManiSkillDataset(Dataset):
         )
 
         infos = {
-            "actions_stats": {"stats": actions_fit[0], "slice": [0, 3]},
+            "actions_stats": {"stats": actions_fit, "slice": [0, 3]},
             "obs_horizon": self.obs_horizon,
             "pred_horizon": self.pred_horizon,
             "actions_shape": list(sample_batch["actions"].shape),

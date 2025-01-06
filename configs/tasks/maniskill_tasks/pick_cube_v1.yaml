@@ -1,4 +1,5 @@
 env_id: PickCube-v1
 state_modality_keys: [goal_pos]
+state_modality_keys_with_tcp_pose: [tcp_pose, goal_pos]
 rgb_modality_keys: [camera1]
 sim_backend: cpu

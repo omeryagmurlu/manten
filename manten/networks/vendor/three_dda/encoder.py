@@ -19,7 +19,7 @@ from .resnet import load_resnet18, load_resnet50
 
 
 class Encoder(nn.Module):
-    def __init__(
+    def __init__(  # noqa: C901
         self,
         backbone="clip",
         image_size=(256, 256),
@@ -29,7 +29,10 @@ class Encoder(nn.Module):
         num_attn_heads=8,
         num_vis_ins_attn_layers=2,
         fps_subsampling_factor=5,
+        custom_state_shapes=None,
     ):
+        if custom_state_shapes is None:
+            custom_state_shapes = {}
         super().__init__()
         assert backbone in ["resnet50", "resnet18", "clip"]
         assert image_size in [(128, 128), (256, 256)]
@@ -84,11 +87,29 @@ class Encoder(nn.Module):
             embedding_dim, num_attn_heads, num_layers=3, use_adaln=False
         )
 
+        # custom state encoders
+        if len(custom_state_shapes) > 0:
+            dc = {}
+            num_end_dims = sum(
+                [torch.prod(torch.tensor(shape)) for shape in custom_state_shapes.values()]
+            )
+            each_dim = embedding_dim // num_end_dims
+            if embedding_dim % num_end_dims != 0:
+                # we can easily put another linear to handle this case, but why, let's just throw an error
+                raise ValueError(
+                    "Embedding dim must be divisible by the sum of all custom state shapes"
+                )
+            for key, value in custom_state_shapes.items():
+                prop_cnt = torch.prod(torch.tensor(value))
+                dc[key] = nn.Linear(prop_cnt, prop_cnt * each_dim)
+
+            self.custom_state_encoders = nn.ModuleDict(dc)
+
         # # Goal gripper learnable features
         # self.goal_gripper_embed = nn.Embedding(1, embedding_dim)
 
         # Instruction encoder
-        self.instruction_encoder = nn.Linear(512, embedding_dim)
+        # self.instruction_encoder = nn.Linear(512, embedding_dim)
 
         # Attention from vision to language
         layer = ParallelAttention(
@@ -252,6 +273,22 @@ class Encoder(nn.Module):
         )
         instr_dummy_pos = self.relative_pe_layer(instr_dummy_pos)
         return instr_feats, instr_dummy_pos
+
+    def encode_custom_states(self, custom_states):
+        """
+        custom_states: {key: (B, nhist, ...rest_of_shape)}
+
+        returns (B, nhist, F)
+        """
+
+        custom_state_feats = []
+        for key, value in custom_states.items():
+            custom_state_feats.append(self.custom_state_encoders[key](value))
+
+        if len(custom_state_feats) == 0:
+            return None
+
+        return torch.cat(custom_state_feats, dim=-1)
 
     def run_fps(self, context_features, context_pos, keep_mask=None):
         # context_features (Np, B, F)

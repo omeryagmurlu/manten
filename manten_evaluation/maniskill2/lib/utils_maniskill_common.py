@@ -65,15 +65,17 @@ def process_observation_from_raw(obs, obs_mode, image_size: int = 128, cam=None)
 
         return {
             **extra_elems,
-            "rgb_obs": einops.rearrange(
-                obs["pointcloud"]["rgb"],
-                "ix (cam h w) c -> ix cam c h w",
-                cam=cam,
-                h=image_size,
-                w=image_size,
-                c=3,
-            ).astype(np.float64)
-            / 255.0,
+            "rgb_obs": (
+                einops.rearrange(
+                    obs["pointcloud"]["rgb"],
+                    "ix (cam h w) c -> ix cam c h w",
+                    cam=cam,
+                    h=image_size,
+                    w=image_size,
+                    c=3,
+                )
+                / 255.0
+            ),
             "pcd_obs": einops.rearrange(
                 pcd[..., :3],
                 "ix (cam h w) c -> ix cam c h w",

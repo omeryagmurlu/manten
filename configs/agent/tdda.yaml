@@ -1,11 +1,6 @@
-_diffusion_timesteps: 25
-_embedding_dim: 192
-_num_history: 1 # kinda like 0, that part of the code is a mess
-_relative_action: ${_relative_action}
-_rotation_parametrization: "6D"
-_dataset_stats: null # this is filled in train.py
+_diffusion_timesteps: ???
 agent:
-  _target_: manten.agents.three_dda.three_dda_agent.ThreeDDAAgent
+  _target_: manten.agents.td_diffuser_actor.three_dda_agent.ThreeDDAAgent
   position_noise_scheduler:
     _target_: diffusers.schedulers.DDPMScheduler
     num_train_timesteps: ${..._diffusion_timesteps}
@@ -16,33 +11,24 @@ agent:
     num_train_timesteps: ${..._diffusion_timesteps}
     beta_schedule: squaredcos_cap_v2
     prediction_type: epsilon
-  rotation_parametrization:
-    _target_: manten.agents.three_dda.three_dda_agent.RotationParametrization
-    rotation_parametrization: ${..._rotation_parametrization}
-    quaternion_format: wxyz
-  position_normalization:
-    _target_: manten.agents.three_dda.three_dda_agent.PositionNormalization
-    first_n: 3
-    dataset_stats: ${..._dataset_stats}
   encoder:
-    _target_: manten.agents.three_dda.encoder.Encoder
+    _partial_: True
+    _target_: manten.networks.vendor.three_dda.encoder.Encoder
     backbone: "clip"
-    image_size: [256, 256]
-    embedding_dim: ${..._embedding_dim}
     num_sampling_level: 1
-    nhist: ${..._num_history}
     num_vis_ins_attn_layers: 2
     fps_subsampling_factor: 3
   noise_model:
-    _target_: manten.agents.three_dda.head.DiffusionHead
-    embedding_dim: ${..._embedding_dim}
+    _partial_: True
+    _target_: manten.networks.vendor.three_dda.head.DiffusionHead
     use_instruction: True
-    nhist: ${..._num_history}
     lang_enhanced: True
-    rotation_parametrization: ${..._rotation_parametrization}
   metric:
-    _target_: manten.metrics.three_dda_metric.ThreeDDAMetric
-  num_history: ${.._num_history}
-  relative: ${.._relative_action}
-  use_instruction: True
+    _target_: manten.metrics.traj_action_metric.MSELossPoseBCEGripperMetric
+    pos_weight: 10.0
+    rot_weight: 5.0
+    gripper_weight: 1.0
+  relative: ???
+  act_horizon: ???
+  # use_instruction: True
   n_inference_steps: ${.._diffusion_timesteps}
