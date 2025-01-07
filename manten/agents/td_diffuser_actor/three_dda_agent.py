@@ -181,6 +181,8 @@ class ThreeDDAAgent(
 
             if self.sigmoid_openness_in_inference:
                 openness_pred = torch.sigmoid(openness_pred)
+                # also map to -1 1
+                openness_pred = 2 * openness_pred - 1
 
             complete_traj = torch.cat((traj_rot_pos, openness_pred), -1)
             complete_traj = self.action_scaler.descale(complete_traj)
