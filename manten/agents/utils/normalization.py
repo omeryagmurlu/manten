@@ -70,31 +70,28 @@ def auto_reshape_to_end(dim_size):
 
 
 class Scaler(nn.Module, ABC):
-    def __init__(self, *, slice=None, op_on_slice_only=False, **_):  # noqa: A002
+    def __init__(self, *, slices=None, **_):
         super().__init__()
 
-        self.slice = slice
-        self.op_on_slice_only = op_on_slice_only
+        self.slices = slices
 
     def scale(self, x):
-        if self.slice is None:
+        if self.slices is None:
             return self._scale(x)
 
         return self.sliced_op(x, self._scale)
 
     def descale(self, x):
-        if self.slice is None:
+        if self.slices is None:
             return self._descale(x)
 
         return self.sliced_op(x, self._descale)
 
     def sliced_op(self, x, op):
-        sl = self.slice
         out_x = x.clone()
-        if self.op_on_slice_only:
-            out_x[..., sl] = op(x[..., sl])
-        else:
-            out_x[..., sl] = op(x)[..., sl]
+        op_x = op(x)
+        for s in self.slices:
+            out_x[..., s] = op_x[..., s]
         return out_x
 
     @abstractmethod

@@ -12,6 +12,7 @@ _rgb_modality_keys: null
 _control_mode: ???
 _load_count: null
 _rotation_transform: null
+_use_mmap: False
 
 # I hate the following combination of omegaconf interpolations and YAML anchors, but it is what it is
 #
@@ -59,6 +60,7 @@ __1:
       control_mode: ${...._control_mode}
       load_count: ${...._load_count}
       rotation_transform: ${...._rotation_transform}
+      use_mmap: ${...._use_mmap}
 
 datamodule:
   _target_: manten.utils.utils_data.DummyDataModule

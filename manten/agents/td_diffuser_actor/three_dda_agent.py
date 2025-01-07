@@ -36,11 +36,13 @@ class ThreeDDAAgent(
         rotation_noise_scheduler,
         encoder,
         noise_model,
+        sigmoid_openness_in_inference,  # needed if bce _with logits_ is used
+        # scale_actions_by_pcd,
+        relative,  # center the pcd around tcp
+        act_horizon,
         embedding_dim=192,
-        relative=True,  # center the pcd around tcp
         n_inference_steps=10,
         tcp_pose_key=None,
-        act_horizon=8,
         **kwargs,
     ):
         super().__init__(**kwargs)
@@ -51,6 +53,20 @@ class ThreeDDAAgent(
         self.use_instruction = False  # will come from dataset
         self.n_inference_steps = n_inference_steps
         self.act_horizon = act_horizon
+        self.sigmoid_openness_in_inference = sigmoid_openness_in_inference
+
+        # This won't work for now, since we'd need to the pcd_scale _before_ calculating actions_stats
+        # otherwise actions don't line in -1 1 range
+        # this highlights that the proper place to do any kind of pcd scaling is in the
+        # dataset / agent wrapper, but maybe later
+
+        # if (
+        #     scale_actions_by_pcd is not False
+        #     or scale_actions_by_pcd != "delta"
+        #     or scale_actions_by_pcd != "absolute"
+        # ):
+        #     raise ValueError(f"Unsupported scale_actions_by_pcd value {scale_actions_by_pcd}")
+        # self.scale_actions_by_pcd = scale_actions_by_pcd
 
         if tcp_pose_key is None:
             self.tcp_pose_key = self.dataset_info["tcp_pose_key"]
@@ -73,6 +89,8 @@ class ThreeDDAAgent(
             nhist=self.obs_horizon,
             embedding_dim=embedding_dim,
         )
+
+        assert self.act_dim == 3 + self.rotation_dim + 1, "Action dim mismatch"
 
     @property
     def obs_horizon(self):
@@ -97,7 +115,9 @@ class ThreeDDAAgent(
         B = actions.shape[0]
         conditions = self.encode_observations(pcd_obs, rgb_obs, pcd_mask, state_obs)
 
-        noise = torch.randn((B, self.pred_horizon, self.act_dim), device=actions.device)
+        noise_pos_rot = torch.randn(
+            (B, self.pred_horizon, self.act_dim - 1), device=actions.device
+        )
 
         timesteps = torch.randint(
             0,
@@ -107,23 +127,24 @@ class ThreeDDAAgent(
         ).long()
 
         noisy_position = self.position_noise_scheduler.add_noise(
-            norm_actions[..., :3], noise[..., :3], timesteps
+            norm_actions[..., :3], noise_pos_rot[..., :3], timesteps
         )
         noisy_rotation = self.rotation_noise_scheduler.add_noise(
-            norm_actions[..., 3:-1], noise[..., 3:-1], timesteps
+            norm_actions[..., 3:-1], noise_pos_rot[..., 3:None], timesteps
         )
 
-        noisy_traj = torch.cat((noisy_position, noisy_rotation), -1)  # don't add openness
+        noisy_rot_pos = torch.cat((noisy_position, noisy_rotation), -1)  # don't add openness
 
         (pos_pred, rot_pred, openness_pred) = self.noise_model(
-            trajectory=noisy_traj, timestep=timesteps, **conditions
+            trajectory=noisy_rot_pos, timestep=timesteps, **conditions
         )
 
         pred = torch.cat((pos_pred, rot_pred, openness_pred), -1)
 
         pred_type = self.position_noise_scheduler.config.prediction_type
         if pred_type == "epsilon":
-            return noise, pred
+            epsilon_with_gt_openness = torch.cat((noise_pos_rot, norm_actions[..., -1:]), -1)
+            return epsilon_with_gt_openness, pred
         elif pred_type == "sample":
             return norm_actions, pred
         else:
@@ -139,26 +160,29 @@ class ThreeDDAAgent(
             B = sample_tensor.shape[0]
             device = sample_tensor.device
 
-            traj_wo_openness = torch.randn(
+            traj_rot_pos = torch.randn(
                 (B, self.pred_horizon, self.act_dim - 1), device=device
             )
 
             for t in self.position_noise_scheduler.timesteps:
                 (epsilon_t_pos_pred, epsilon_t_rot_pred, openness_pred) = self.noise_model(
-                    trajectory=traj_wo_openness,
+                    trajectory=traj_rot_pos,
                     timestep=t * torch.ones(B, device=device, dtype=torch.long),
                     **conditions,
                 )
 
                 pos = self.position_noise_scheduler.step(
-                    epsilon_t_pos_pred, t, traj_wo_openness[..., :3]
+                    epsilon_t_pos_pred, t, traj_rot_pos[..., :3]
                 ).prev_sample
                 rot = self.rotation_noise_scheduler.step(
-                    epsilon_t_rot_pred, t, traj_wo_openness[..., 3:]
+                    epsilon_t_rot_pred, t, traj_rot_pos[..., 3:]
                 ).prev_sample
-                traj_wo_openness = torch.cat((pos, rot), -1)
+                traj_rot_pos = torch.cat((pos, rot), -1)
 
-            complete_traj = torch.cat((traj_wo_openness, openness_pred), -1)
+            if self.sigmoid_openness_in_inference:
+                openness_pred = torch.sigmoid(openness_pred)
+
+            complete_traj = torch.cat((traj_rot_pos, openness_pred), -1)
             complete_traj = self.action_scaler.descale(complete_traj)
 
         start = self.obs_horizon - 1

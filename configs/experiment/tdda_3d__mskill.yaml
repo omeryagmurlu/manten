@@ -48,10 +48,11 @@ datamodule:
   _control_mode: pd_ee_delta_pose
   _rotation_transform: rotation_6d
 
-  _batch_size: 512
+  _batch_size: 256
   _train_target_iters: ${_detailed_metrics_every_n_gs}
   _num_workers: 12
   # _load_count: 20
+  _use_mmap: True
 
 agent:
   agent:

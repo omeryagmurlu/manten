@@ -234,20 +234,8 @@ class ManiSkillDataset(Dataset):
 
         sample_batch = self[0]
 
-        pcd_stats = (
-            {
-                "pcd_stats": pcd_fit,
-            }
-            if pcd_fit is not None
-            else {}
-        )
-
-        tcp_pose_key = (
-            {"tcp_pose_key": "tcp_pose"} if "tcp_pose" in self.state_modality_keys else {}
-        )
-
         infos = {
-            "actions_stats": {"stats": actions_fit, "slice": [0, 3]},
+            "actions_stats": actions_fit,
             "obs_horizon": self.obs_horizon,
             "pred_horizon": self.pred_horizon,
             "actions_shape": list(sample_batch["actions"].shape),
@@ -257,11 +245,19 @@ class ManiSkillDataset(Dataset):
             "rotation_dim": (
                 self.rotation_transformer.to_dim
                 if self.rotation_transformer is not None
-                else 3
+                else 3  # maniskill default euler angles
             ),
-            **pcd_stats,
-            **tcp_pose_key,
         }
+
+        if pcd_fit is not None:
+            infos["pcd_stats"] = pcd_fit
+
+        if "tcp_pose" in self.state_modality_keys:
+            infos["tcp_pose_key"] = "tcp_pose"
+
+        # agent wrappers need this, and for now just manually match
+        # if self.rotation_transformer is not None:
+        #     infos["rotation_transformer"] = self.rotation_transform
 
         return infos
 

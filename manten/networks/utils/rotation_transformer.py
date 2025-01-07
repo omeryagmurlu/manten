@@ -65,7 +65,7 @@ class RotationTransformer:
     @staticmethod
     def _apply_funcs(x: T, funcs: list) -> T:
         if isinstance(x, np.ndarray):
-            x_ = torch.from_numpy(x)
+            x_ = torch.tensor(x)
         else:
             x_ = x
         x_: torch.Tensor

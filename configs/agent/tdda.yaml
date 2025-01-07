@@ -23,6 +23,7 @@ agent:
     _target_: manten.networks.vendor.three_dda.head.DiffusionHead
     use_instruction: True
     lang_enhanced: True
+  sigmoid_openness_in_inference: True
   metric:
     _target_: manten.metrics.traj_action_metric.MSELossPoseBCEGripperMetric
     pos_weight: 10.0
