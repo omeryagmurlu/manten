@@ -7,8 +7,8 @@ defaults:
 
 project_name: manten_maniskill_${task_spec.env_id}
 
-_save_every_n_gs: 10000
-_detailed_metrics_every_n_gs: 10000
+_save_every_n_gs: 2500
+_detailed_metrics_every_n_gs: 2500
 _skip_first_n_gs: 0
 training:
   num_global_steps: 60000
@@ -18,7 +18,7 @@ training:
   eval_test:
     max_steps: 6
   custom_eval:
-    every_n_global_steps: 60000
+    every_n_global_steps: 15000
     skip_first_global_steps: 0
 
   # sanity_check: False
@@ -48,9 +48,9 @@ datamodule:
   _control_mode: pd_ee_delta_pose
   _rotation_transform: rotation_6d
 
-  _batch_size: 256
-  _train_target_iters: ${_detailed_metrics_every_n_gs}
-  _num_workers: 2
+  _batch_size: 896
+  _train_target_iters: 10000
+  _num_workers: 4
   _prefetch_factor: 2
   # _load_count: 200
   _use_mmap: False
@@ -62,30 +62,61 @@ agent:
   _diffusion_timesteps: 100
 
 custom_evaluator:
-  _target_: manten_evaluation.maniskill2.lib.evaluation.ManiskillEvaluation
-  _partial_: True
-  agent_wrapper:
-    _target_: manten_evaluation.maniskill2.agent_wrappers.lddp.LDDPAgentWrapper
+  - _target_: manten_evaluation.maniskill2.lib.evaluation.ManiskillEvaluation
     _partial_: True
-    obs_mode: ${datamodule._obs_mode}
-    state_modality_keys: ${datamodule._state_modality_keys}
-    rgb_modality_keys: ${datamodule._rgb_modality_keys}
-    rotation_transform: ${datamodule._rotation_transform}
-  num_eval_episodes: 105
-  num_envs: 15
-  sim_backend: ${task_spec.sim_backend}
-  env_id: ${datamodule._task}
-  env_kwargs:
-    control_mode: ${datamodule._control_mode}
-    reward_mode: sparse
-    obs_mode: ${datamodule._obs_mode}
-    render_mode: rgb_array
-    # max_episode_steps: 300
-    max_episode_steps: 100
-  wrappers:
-    - _target_: manten_evaluation.maniskill2.lib.utils_wrappers.TreeFrameStack
+    agent_wrapper:
+      _target_: manten_evaluation.maniskill2.agent_wrappers.lddp.LDDPAgentWrapper
       _partial_: True
-      num_stack: ${datamodule._obs_horizon}
-  action_executor:
-    _target_: manten_evaluation.maniskill2.lib.utils_wrappers.HorizonActionExecutor
-  save_video: True
+      obs_mode: ${datamodule._obs_mode}
+      state_modality_keys: ${datamodule._state_modality_keys}
+      rgb_modality_keys: ${datamodule._rgb_modality_keys}
+      rotation_transform: ${datamodule._rotation_transform}
+      meta_2d_3d_mask: 2d 
+    name_extension: 2d
+    num_eval_episodes: 105
+    num_envs: 15
+    sim_backend: ${task_spec.sim_backend}
+    env_id: ${datamodule._task}
+    env_kwargs:
+      control_mode: ${datamodule._control_mode}
+      reward_mode: sparse
+      obs_mode: ${datamodule._obs_mode}
+      render_mode: rgb_array
+      # max_episode_steps: 300
+      max_episode_steps: 100
+    wrappers:
+      - _target_: manten_evaluation.maniskill2.lib.utils_wrappers.TreeFrameStack
+        _partial_: True
+        num_stack: ${datamodule._obs_horizon}
+    action_executor:
+      _target_: manten_evaluation.maniskill2.lib.utils_wrappers.HorizonActionExecutor
+    save_video: True
+  - _target_: manten_evaluation.maniskill2.lib.evaluation.ManiskillEvaluation
+    _partial_: True
+    agent_wrapper:
+      _target_: manten_evaluation.maniskill2.agent_wrappers.lddp.LDDPAgentWrapper
+      _partial_: True
+      obs_mode: ${datamodule._obs_mode}
+      state_modality_keys: ${datamodule._state_modality_keys}
+      rgb_modality_keys: ${datamodule._rgb_modality_keys}
+      rotation_transform: ${datamodule._rotation_transform}
+      meta_2d_3d_mask: 3d 
+    name_extension: 3d
+    num_eval_episodes: 105
+    num_envs: 15
+    sim_backend: ${task_spec.sim_backend}
+    env_id: ${datamodule._task}
+    env_kwargs:
+      control_mode: ${datamodule._control_mode}
+      reward_mode: sparse
+      obs_mode: ${datamodule._obs_mode}
+      render_mode: rgb_array
+      # max_episode_steps: 300
+      max_episode_steps: 100
+    wrappers:
+      - _target_: manten_evaluation.maniskill2.lib.utils_wrappers.TreeFrameStack
+        _partial_: True
+        num_stack: ${datamodule._obs_horizon}
+    action_executor:
+      _target_: manten_evaluation.maniskill2.lib.utils_wrappers.HorizonActionExecutor
+    save_video: True

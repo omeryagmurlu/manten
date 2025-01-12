@@ -78,7 +78,7 @@ class TrainLoops:
         optimizer,
         lr_scheduler,
         log_aggregator,
-        custom_evaluator: CustomEvaluator | Callable[..., CustomEvaluator] | None,
+        custom_evaluator: CustomEvaluator | Callable[..., CustomEvaluator] | list[CustomEvaluator] | list[Callable[..., CustomEvaluator]] | None,
         ema,
         whole_cfg,
     ):
@@ -283,33 +283,36 @@ class TrainLoops:
         self.free_memory()
         self.accelerator.wait_for_everyone()
         if self.accelerator.is_main_process:
-            proc_name = f"custom_eval{'-ema' if use_ema else ''}"
+            custom_evaluators = self.custom_evaluator if isinstance(self.custom_evaluator, list) else [self.custom_evaluator]
 
-            if callable(self.custom_evaluator):
-                custom_eval = self.custom_evaluator(
-                    output_dir=f"{self.accelerator.project_dir}/{proc_name}/epoch-{self.state.epoch}",
-                )
-            else:
-                custom_eval = self.custom_evaluator
-            proc_name = f"{proc_name}-{custom_eval.eval_name}"
+            for idx, custom_evaluator in enumerate(custom_evaluators):
+                proc_name = f"custom_eval{'-ema' if use_ema else ''}-{idx}"
 
-            logger.info("%s@epoch:%d", proc_name, self.state.epoch)
-            with torch.no_grad():  # just double checking lol
-                agent = self.agent if not use_ema else self.ema.agent
-                agent.eval()
-                agent = self.accelerator.unwrap_model(agent)
-                agent.eval()
-                eval_infos, rich_media = custom_eval.evaluate(agent)
+                if callable(custom_evaluator):
+                    custom_eval = custom_evaluator(
+                        output_dir=f"{self.accelerator.project_dir}/{proc_name}/epoch-{self.state.epoch}",
+                    )
+                else:
+                    custom_eval = custom_evaluator
+                proc_name = f"{proc_name}-{custom_eval.eval_name}"
 
-            rich_logs = handle_rich_media_for_logs(rich_media)
-            eval_logs = {f"{k}-mean": v.mean() for k, v in eval_infos.items()}
+                logger.info("%s@epoch:%d", proc_name, self.state.epoch)
+                with torch.no_grad():  # just double checking lol
+                    agent = self.agent if not use_ema else self.ema.agent
+                    agent.eval()
+                    agent = self.accelerator.unwrap_model(agent)
+                    agent.eval()
+                    eval_infos, rich_media = custom_eval.evaluate(agent)
 
-            custom_eval_logs = {
-                f"{proc_name}/{k}": v for (k, v) in ({**eval_logs, **rich_logs}).items()
-            }
+                rich_logs = handle_rich_media_for_logs(rich_media)
+                eval_logs = {f"{k}-mean": v.mean() for k, v in eval_infos.items()}
 
-            self.accelerator.log(custom_eval_logs, step=self.state.global_step)
-            print(tabulate(custom_eval_logs.items()))
+                custom_eval_logs = {
+                    f"{proc_name}/{k}": v for (k, v) in ({**eval_logs, **rich_logs}).items()
+                }
+
+                self.accelerator.log(custom_eval_logs, step=self.state.global_step)
+                print(tabulate(custom_eval_logs.items()))
 
         self.free_memory()
         self.accelerator.wait_for_everyone()

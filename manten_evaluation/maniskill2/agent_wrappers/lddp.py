@@ -31,6 +31,7 @@ class LDDPAgentWrapper:
         state_modality_keys=None,
         rgb_modality_keys=None,
         rotation_transform=None,
+        meta_2d_3d_mask=None,
         device="cuda",
     ):
         if obs_modalities is None:
@@ -53,6 +54,18 @@ class LDDPAgentWrapper:
             )
         else:
             self.__rotation_transformer = None
+
+        T = torch.Tensor([True]).bool().to("cuda")
+        F = torch.Tensor([False]).bool().to("cuda")
+
+        if meta_2d_3d_mask is None:
+            self.__meta = {}
+        elif meta_2d_3d_mask == "2d":
+            self.__meta = {"3d_mask": F, "2d_mask": T}
+        elif meta_2d_3d_mask == "3d":
+            self.__meta = {"3d_mask": T, "2d_mask": T}
+        else:
+            raise ValueError(f"Invalid meta_2d_3d_mask: {meta_2d_3d_mask}")
 
     def __getattr__(self, attr):
         return getattr(self.__agent, attr)
@@ -115,7 +128,13 @@ class LDDPAgentWrapper:
             else torch.tensor(x, device=self.__device),
             obs,
         )
-        actions = self.__agent.predict_actions(observations=self.__obs_dict(obs))
+        if len(self.__meta) == 0:
+            actions = self.__agent.predict_actions(observations=self.__obs_dict(obs))
+        else:
+            actions = self.__agent.predict_actions(
+                observations=self.__obs_dict(obs), meta=self.__meta
+            )
+        
         actions = self.__proc_actions(actions)
         return actions
 

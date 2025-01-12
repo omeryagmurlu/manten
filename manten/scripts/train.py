@@ -85,6 +85,7 @@ def setup(cfg):  # noqa: PLR0915
 
     if hasattr(cfg, "custom_evaluator") and cfg.custom_evaluator is not None:
         custom_evaluator = hydra.utils.instantiate(cfg.custom_evaluator)
+        custom_evaluator = OmegaConf.to_object(custom_evaluator)
     else:
         custom_evaluator = None
 

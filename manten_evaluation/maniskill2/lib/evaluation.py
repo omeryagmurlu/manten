@@ -149,6 +149,7 @@ class ManiskillEvaluation:
         save_video=False,
         wrappers=None,
         progress_bar=True,
+        name_extension="",
     ):
         if wrappers is None:
             wrappers = []
@@ -164,6 +165,7 @@ class ManiskillEvaluation:
         self.wrappers = wrappers
         self.env_id = env_id
         self.progress_bar = progress_bar
+        self.name_extension = name_extension
 
     def evaluate(self, agent):
         if self.agent_wrapper is not None:
@@ -205,7 +207,7 @@ class ManiskillEvaluation:
 
     @property
     def eval_name(self):
-        return f"eval-maniskill-{self.env_id}"
+        return f"eval-maniskill-{self.env_id}-{self.name_extension}"
 
 
 if __name__ == "__main__":
