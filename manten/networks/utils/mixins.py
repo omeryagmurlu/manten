@@ -4,7 +4,7 @@ from torch import nn
 class ModuleAttrMixin(nn.Module):
     def __init__(self):
         super().__init__()
-        self.__dummy_variable = nn.Parameter()
+        self.__dummy_variable = nn.Parameter(requires_grad=False)
 
     @property
     def device(self):

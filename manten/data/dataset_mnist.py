@@ -31,3 +31,6 @@ class MNISTDataset(Dataset):
             "image": image,
             "label": label,
         }
+
+    def get_dataset_info(self):
+        return {}

@@ -7,9 +7,9 @@ datamodule:
   _load_count: 100
 
 training:
-  num_epochs: 1
+  num_epochs: 3
   num_global_steps: .inf
-  max_steps: 3
+  max_steps: 5
   sanity_check: 2
   # epoch settings override global_steps so following is fine
   val:

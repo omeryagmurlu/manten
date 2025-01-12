@@ -13,7 +13,6 @@ class Combined2D3DMetric(
         "metric_action_2d",
         "metric_action_3d",
         "metric_action_consistency",
-        "sigmoid_openness_in_action_consistency",
     ),
     BaseMetric,
 ):

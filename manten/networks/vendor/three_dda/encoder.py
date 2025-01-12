@@ -122,17 +122,17 @@ class Encoder(nn.Module):
         # Instruction encoder
         # self.instruction_encoder = nn.Linear(512, embedding_dim)
 
-        # Attention from vision to language
-        layer = ParallelAttention(
-            num_layers=num_vis_ins_attn_layers,
-            d_model=embedding_dim,
-            n_heads=num_attn_heads,
-            self_attention1=False,
-            self_attention2=False,
-            cross_attention1=True,
-            cross_attention2=False,
-        )
-        self.vl_attention = nn.ModuleList([layer for _ in range(1) for _ in range(1)])
+        # # Attention from vision to language
+        # layer = ParallelAttention(
+        #     num_layers=num_vis_ins_attn_layers,
+        #     d_model=embedding_dim,
+        #     n_heads=num_attn_heads,
+        #     self_attention1=False,
+        #     self_attention2=False,
+        #     cross_attention1=True,
+        #     cross_attention2=False,
+        # )
+        # self.vl_attention = nn.ModuleList([layer for _ in range(1) for _ in range(1)])
 
     def forward(self):
         return None

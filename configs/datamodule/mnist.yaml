@@ -3,6 +3,7 @@ datamodule:
   _target_: manten.utils.utils_data.DummyDataModule
   train_dataloader:
     _target_: torch.utils.data.DataLoader
+    _partial_: True
     dataset:
       _target_: manten.data.dataset_mnist.MNISTDataset
       training: True
@@ -13,6 +14,7 @@ datamodule:
     drop_last: False
   test_dataloader:
     _target_: torch.utils.data.DataLoader
+    _partial_: True
     dataset:
       _target_: manten.data.dataset_mnist.MNISTDataset
       training: False

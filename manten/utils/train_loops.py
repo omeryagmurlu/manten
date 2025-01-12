@@ -120,7 +120,7 @@ class TrainLoops:
 
             mean_epoch_loss, last_batch_loss = self.train_loop()
 
-            with torch.inference_mode(), torch.no_grad():
+            with torch.no_grad():
                 self.agent.eval()
                 self.trigger_validation()
                 if self.ema:
@@ -132,6 +132,7 @@ class TrainLoops:
             self.state.epoch += 1
         logger.info("training finished, trained for %d epochs", self.state.epoch)
 
+    @torch.inference_mode()
     def trigger_validation(self, **kwa):
         if self.every_n_after_train(self.cfg.val):
             self.validation_loop(**kwa)
@@ -201,6 +202,7 @@ class TrainLoops:
 
         return sum(train_epoch_losses) / len(train_epoch_losses), loss
 
+    @torch.inference_mode()
     def validation_loop(self, *, use_ema=False) -> None:
         agent = self.agent if not use_ema else self.ema.agent
         proc_name = f"validate{'-ema' if use_ema else ''}"
@@ -235,6 +237,7 @@ class TrainLoops:
             print(tabulate(validate_logs.items()))
         self.log_aggregator.reset()
 
+    @torch.inference_mode()
     def evaluation_loop(self, dataloader, max_steps, split, *, use_ema=False) -> None:
         agent = self.agent if not use_ema else self.ema.agent
         proc_name = f"eval-{split}{'-ema' if use_ema else ''}"
@@ -268,6 +271,7 @@ class TrainLoops:
             self.accelerator.log(eval_logs, step=self.state.global_step)
         self.log_aggregator.reset()
 
+    @torch.inference_mode()
     def custom_evaluation(self, *, use_ema=False) -> None:
         if not (
             self.custom_evaluator
@@ -290,7 +294,7 @@ class TrainLoops:
             proc_name = f"{proc_name}-{custom_eval.eval_name}"
 
             logger.info("%s@epoch:%d", proc_name, self.state.epoch)
-            with torch.inference_mode(), torch.no_grad():  # just double checking lol
+            with torch.no_grad():  # just double checking lol
                 agent = self.agent if not use_ema else self.ema.agent
                 agent.eval()
                 agent = self.accelerator.unwrap_model(agent)
@@ -372,13 +376,13 @@ class TrainLoops:
 
     @staticmethod
     def validation_step(batch, agent):
-        with torch.inference_mode():
+        with torch.no_grad():
             metric = agent("validate", batch)
         return metric
 
     @staticmethod
     def evaluation_step(batch, agent):
-        with torch.inference_mode():
+        with torch.no_grad():
             metric, trajectory = agent("eval", batch, compare_gt=True)
         return metric, trajectory
 
