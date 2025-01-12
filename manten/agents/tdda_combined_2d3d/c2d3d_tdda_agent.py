@@ -3,11 +3,12 @@ import optree
 import torch
 
 from manten.agents.utils.mixins import DatasetActionScalerMixin, DatasetPCDScalerMixin
-from manten.agents.utils.templates import BatchPCDObservationActionAgentTemplate
+from manten.agents.utils.templates import BatchPCDOrRGBObservationActionAgentTemplate
 from manten.metrics.traj_action_metric import (
     PosRotGripperMetric,
     PosRotGripperStats,
 )
+from manten.utils.utils_pytorch import get_ones_shape_like
 
 
 def convert2rel(pcd, curr_gripper, *others):
@@ -22,11 +23,13 @@ def convert2rel(pcd, curr_gripper, *others):
     return (pcd, curr_gripper, *others)
 
 
-@BatchPCDObservationActionAgentTemplate.make_agent(
+@BatchPCDOrRGBObservationActionAgentTemplate.make_agent(
     evaluation_metric_cls=PosRotGripperMetric, evaluation_stats_cls=PosRotGripperStats
 )
-class ThreeDDAAgent(
-    BatchPCDObservationActionAgentTemplate, DatasetActionScalerMixin, DatasetPCDScalerMixin
+class Combined2D3DTDDAAgent(
+    BatchPCDOrRGBObservationActionAgentTemplate,
+    DatasetActionScalerMixin,
+    DatasetPCDScalerMixin,
 ):
     def __init__(
         self,
@@ -107,12 +110,17 @@ class ThreeDDAAgent(
     def rotation_dim(self):
         return self.dataset_info["rotation_dim"]
 
-    def compute_train_gt_and_pred(self, pcd_obs, rgb_obs, pcd_mask, state_obs, actions):
+    def compute_train_gt_and_pred(
+        self, pcd_obs, rgb_obs, pcd_mask, state_obs, actions, keep_mask_3d
+    ):
         # rgb_obs (B, obs_horizon, cam, C, H, W)
         norm_actions = self.action_scaler.scale(actions)
 
         B = actions.shape[0]
-        conditions = self.encode_observations(pcd_obs, rgb_obs, pcd_mask, state_obs)
+        conditions_3d, conditions_2d = self.encode_observations(
+            pcd_obs, rgb_obs, pcd_mask, state_obs
+        )
+        conditions = {"2d": conditions_2d, "3d": conditions_3d}
 
         noise_pos_rot = torch.randn(
             (B, self.pred_horizon, self.act_dim - 1), device=actions.device
@@ -134,27 +142,57 @@ class ThreeDDAAgent(
 
         noisy_rot_pos = torch.cat((noisy_position, noisy_rotation), -1)  # don't add openness
 
-        (pos_pred, rot_pred, openness_pred) = self.noise_model(
-            trajectory=noisy_rot_pos, timestep=timesteps, **conditions
-        )
+        prediction_by_vis_mode = {}
+        for mode in ["2d", "3d"]:
+            (pos_pred, rot_pred, openness_pred) = self.noise_model(
+                trajectory=noisy_rot_pos.clone(),  # clone because I'm not sure if noise_model modifies in place without clone
+                timestep=timesteps.clone(),
+                **conditions[mode],
+            )
 
-        pred = torch.cat((pos_pred, rot_pred, openness_pred), -1)
+            pred = torch.cat((pos_pred, rot_pred, openness_pred), -1)
+            prediction_by_vis_mode[mode] = pred
 
         pred_type = self.position_noise_scheduler.config.prediction_type
         if pred_type == "epsilon":
-            epsilon_with_gt_openness = torch.cat((noise_pos_rot, norm_actions[..., -1:]), -1)
-            return epsilon_with_gt_openness, pred
+            ret_gt = torch.cat((noise_pos_rot, norm_actions[..., -1:]), -1)
         elif pred_type == "sample":
-            return norm_actions, pred
+            ret_gt = norm_actions
         else:
             raise ValueError(f"Unsupported prediction type {pred_type}")
 
-    def predict_actions(self, pcd_obs, rgb_obs, pcd_mask, state_obs):
+        indices_3d = keep_mask_3d.nonzero()
+        # an optimization would be moving this to the top, but eh
+
+        gt_modes = {
+            "2d": ret_gt,
+            "3d": ret_gt[indices_3d],
+        }
+        pred_modes = {
+            "2d": prediction_by_vis_mode["2d"],
+            "2d_for_3d": prediction_by_vis_mode["2d"][indices_3d],  # for consistency
+            "3d": prediction_by_vis_mode["3d"][indices_3d],
+        }
+
+        return gt_modes, pred_modes
+
+    def predict_actions(self, pcd_obs, rgb_obs, pcd_mask, state_obs, keep_mask_3d):
         self.position_noise_scheduler.set_timesteps(self.n_inference_steps)
         self.rotation_noise_scheduler.set_timesteps(self.n_inference_steps)
 
         with torch.no_grad():
-            conditions = self.encode_observations(pcd_obs, rgb_obs, pcd_mask, state_obs)
+            conditions_3d, conditions_2d = self.encode_observations(
+                pcd_obs, rgb_obs, pcd_mask, state_obs
+            )
+            conditions = optree.tree_map(
+                lambda c2, c3: torch.where(
+                    ~keep_mask_3d.view(keep_mask_3d.shape[0], *get_ones_shape_like(c3)[1:]),
+                    c2,
+                    c3,
+                ),
+                conditions_2d,
+                conditions_3d,
+            )
             sample_tensor = next(iter(pcd_obs.values()))
             B = sample_tensor.shape[0]
             device = sample_tensor.device
@@ -232,11 +270,14 @@ class ThreeDDAAgent(
             rgb_obs, pcd_obs, pcd_mask
         )
         # Keep only low-res scale
-        context_feats = rgb_feats_pyramid[0]
-        context = einops.rearrange(pcd_pyramid[0], "bt ncam c h w -> bt (ncam h w) c")
         context_keep_mask = mask_pyramid[0]
+        context_feats = rgb_feats_pyramid[0] * context_keep_mask
+        context = einops.rearrange(pcd_pyramid[0], "bt ncam c h w -> bt (ncam h w) c")
 
-        context_pe = self.encoder.relative_pe_layer(context)
+        context_feats_2d = rgb_feats_pyramid[0]
+        context_2D = einops.rearrange(
+            self.centered_2d_meshgrid_like(pcd_pyramid[0]), "b ncam c h w -> b (ncam h w) c"
+        )
 
         # # Encode instruction (B, 53, F)
         # instr_feats = None
@@ -251,6 +292,12 @@ class ThreeDDAAgent(
         adaln_gripper_feats, _ = self.encoder.encode_curr_gripper(
             curr_gripper, context_feats, context
         )
+        adaln_gripper_feats_2D, _ = self.encoder.encode_curr_gripper(
+            curr_gripper, context_feats_2d, context_2D, use_2d_pe=True
+        )
+
+        context_pe = self.encoder.relative_pe_layer(context)
+        context_2d_pe = self.encoder.relative_pe_layer_2D(context_2D)
 
         # FPS on visual features (N, B, F) and (B, N, F, 2)
         fps_feats, fps_pos = self.encoder.run_fps(
@@ -258,14 +305,41 @@ class ThreeDDAAgent(
             context_pe,
             keep_mask=context_keep_mask.transpose(0, 1),
         )
-        return {
-            "context_feats": context_feats,
-            "context": context_pe,  # contextualized visual features
-            "instr_feats": instr_feats,  # language features
-            "adaln_gripper_feats": adaln_gripper_feats,  # gripper history features
-            "fps_feats": fps_feats,
-            "fps_pos": fps_pos,  # sampled visual features
-        }
+
+        # fps on 2D is dumb, (since you can simply downsample) but let's do it for consistency
+        # can substitute with a simple downsample later
+        fps_feats_2d, fps_pos_2d = self.encoder.run_fps(
+            context_feats_2d.transpose(0, 1),
+            context_2d_pe,
+        )
+        return (
+            {
+                "context_feats": context_feats,
+                "context": context_pe,  # contextualized visual features
+                "instr_feats": instr_feats,  # language features
+                "adaln_gripper_feats": adaln_gripper_feats,  # gripper history features
+                "fps_feats": fps_feats,
+                "fps_pos": fps_pos,  # sampled visual features
+            },
+            {
+                "context_feats": context_feats_2d,
+                "context": context_2d_pe,  # contextualized visual features
+                "instr_feats": instr_feats,  # language features
+                "adaln_gripper_feats": adaln_gripper_feats_2D,  # gripper history features
+                "fps_feats": fps_feats_2d,
+                "fps_pos": fps_pos_2d,  # sampled visual features
+            },
+        )
+
+    @staticmethod
+    def centered_2d_meshgrid_like(tensor):
+        B, ncam, C, H, W = tensor.shape
+        x = torch.linspace(-1, 1, W, device=tensor.device)
+        y = torch.linspace(-1, 1, H, device=tensor.device)
+        x, y = torch.meshgrid(x, y, indexing="xy")
+        x = x.unsqueeze(0).unsqueeze(0).expand(B, ncam, -1, -1)
+        y = y.unsqueeze(0).unsqueeze(0).expand(B, ncam, -1, -1)
+        return torch.stack((x, y), -3)
 
 
 if __name__ == "__main__":
@@ -275,7 +349,9 @@ if __name__ == "__main__":
 
     from manten.agents.utils.normalization import MinMaxScaler
     from manten.data.dataset_maniskill import ManiSkillDataset
+    from manten.metrics.combined_2d_3d_metric import Combined2D3DMetric
     from manten.metrics.mse_loss_pose_bce_loss_gripper_metric import (
+        MSELossPoseBCELossGripperMetric,
         MSELossPoseBCEWithLogitsLossGripperMetric,
     )
     from manten.networks.vendor.three_dda.encoder import Encoder
@@ -339,16 +415,25 @@ if __name__ == "__main__":
         lang_enhanced=True,
     )
 
-    agent = ThreeDDAAgent(
+    metric = Combined2D3DMetric(
+        metric_action_2d=MSELossPoseBCEWithLogitsLossGripperMetric(),
+        metric_action_3d=MSELossPoseBCEWithLogitsLossGripperMetric(),
+        metric_action_consistency=MSELossPoseBCELossGripperMetric(),
+    )
+
+    agent = Combined2D3DTDDAAgent(
         dataset_info=dataset_info,
         position_noise_scheduler=ddpm(),
         rotation_noise_scheduler=ddpm(),
         encoder=encoder,
-        metric=MSELossPoseBCEWithLogitsLossGripperMetric(),
+        metric=metric,
         noise_model=noise_model,
         action_scaler=MinMaxScaler,
         relative=True,
         n_inference_steps=10,
+        sigmoid_openness_in_inference=True,
+        embedding_dim=192,
+        act_horizon=8,
     )
     agent.to("cuda")  # flash-attn not implemented for cpu
 
@@ -356,11 +441,23 @@ if __name__ == "__main__":
 
     it = iter(dl)
     batch = next(it)
-    batch = optree.tree_map(lambda x: x.to("cuda"), batch)
+    batch = optree.tree_map(
+        lambda x: x if not isinstance(x, torch.Tensor) else x.to("cuda"), batch
+    )
 
     agent("train", batch)
     agent("eval", batch)
 
-    actions = agent.predict_actions(observations=batch["observations"])
+    T = torch.Tensor([True]).bool().to("cuda")
+    F = torch.Tensor([False]).bool().to("cuda")
+
+    actions = agent.predict_actions(
+        observations=batch["observations"], meta={"3d_mask": T, "2d_mask": T}
+    )
+    print(actions.shape)
+    print(actions)
+    actions = agent.predict_actions(
+        observations=batch["observations"], meta={"3d_mask": F, "2d_mask": T}
+    )
     print(actions.shape)
     print(actions)

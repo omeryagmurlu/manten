@@ -2,6 +2,8 @@
 
 import dgl.geometry as dgl_geo
 import einops
+import einops.layers
+import einops.layers.torch
 import torch
 from torch import nn
 from torch.nn import functional as F
@@ -14,7 +16,7 @@ from .layers import (
     FFWRelativeCrossAttentionModule,
     ParallelAttention,
 )
-from .position_encodings import RotaryPositionEncoding3D
+from .position_encodings import RotaryPositionEncoding2D, RotaryPositionEncoding3D
 from .resnet import load_resnet18, load_resnet50
 
 
@@ -80,6 +82,15 @@ class Encoder(nn.Module):
 
         # 3D relative positional embeddings
         self.relative_pe_layer = RotaryPositionEncoding3D(embedding_dim)
+        self.relative_pe_layer_2D = nn.Sequential(
+            RotaryPositionEncoding2D(embedding_dim),
+            einops.layers.torch.Rearrange("... emb sincos -> ... (emb sincos)"),
+            nn.Linear(2 * embedding_dim, 2 * embedding_dim),
+            nn.Mish(),
+            einops.layers.torch.Rearrange(
+                "... (emb sincos) -> ... emb sincos", emb=embedding_dim
+            ),
+        )
 
         # Current gripper learnable features
         self.curr_gripper_embed = nn.Embedding(nhist, embedding_dim)
@@ -126,7 +137,7 @@ class Encoder(nn.Module):
     def forward(self):
         return None
 
-    def encode_curr_gripper(self, curr_gripper, context_feats, context):
+    def encode_curr_gripper(self, curr_gripper, context_feats, context, **kwargs):
         """
         Compute current gripper position features and positional embeddings.
 
@@ -138,7 +149,7 @@ class Encoder(nn.Module):
             - curr_gripper_pos: (B, nhist, F, 2)
         """
         return self._encode_gripper(
-            curr_gripper, self.curr_gripper_embed, context_feats, context
+            curr_gripper, self.curr_gripper_embed, context_feats, context, **kwargs
         )
 
     # def encode_goal_gripper(self, goal_gripper, context_feats, context):
@@ -157,7 +168,9 @@ class Encoder(nn.Module):
     #     )
     #     return (goal_gripper_feats, goal_gripper_pos)
 
-    def _encode_gripper(self, gripper, gripper_embed, context_feats, context):
+    def _encode_gripper(
+        self, gripper, gripper_embed, context_feats, context, use_2d_pe=False
+    ):
         """
         Compute gripper position features and positional embeddings.
 
@@ -174,8 +187,11 @@ class Encoder(nn.Module):
         gripper_feats = gripper_embed.weight.unsqueeze(0).repeat(len(gripper), 1, 1)
 
         # Rotary positional encoding
+        if use_2d_pe:
+            context_pos = self.relative_pe_layer_2D(context)
+        else:
+            context_pos = self.relative_pe_layer(context)
         gripper_pos = self.relative_pe_layer(gripper[..., :3])
-        context_pos = self.relative_pe_layer(context)
 
         gripper_feats = einops.rearrange(gripper_feats, "b npt c -> npt b c")
         context_feats = einops.rearrange(context_feats, "b npt c -> npt b c")
@@ -227,6 +243,7 @@ class Encoder(nn.Module):
             # Interpolate xy-depth to get the locations for this level
             feat_h, feat_w = rgb_features_i.shape[-2:]
             pcd_i = F.interpolate(pcd, (feat_h, feat_w), mode="bilinear")
+            _, _, h, w = pcd_i.shape
             pcd_i = einops.rearrange(
                 pcd_i, "(bt ncam) c h w -> bt (ncam h w) c", ncam=num_cameras
             )
@@ -245,9 +262,14 @@ class Encoder(nn.Module):
 
                 # also zero pcd and rgb features to cut the computation graph
                 pcd_i = pcd_i * mask_i
-                rgb_features_i = rgb_features_i * mask_i
+                # zeroing features causes problems with rgb modality, so leave it
+                # if we are using pcd, it will go away with the mask in fps anyway
+                # rgb_features_i = rgb_features_i * mask_i
 
             rgb_feats_pyramid.append(rgb_features_i)
+            pcd_i = einops.rearrange(
+                pcd_i, "bt (ncam h w) c -> bt ncam c h w", ncam=num_cameras, h=h, w=w
+            )
             pcd_pyramid.append(pcd_i)
 
         if mask is not None:
@@ -255,7 +277,7 @@ class Encoder(nn.Module):
             return (rgb_feats_pyramid, pcd_pyramid, mask_pyramid)
         return (rgb_feats_pyramid, pcd_pyramid)
 
-    def encode_instruction(self, instruction):
+    def encode_instruction(self, instruction, use_2d_pe=False):
         """
         Compute language features/pos embeddings on top of CLIP features.
 
@@ -268,10 +290,16 @@ class Encoder(nn.Module):
         """
         instr_feats = self.instruction_encoder(instruction)
         # Dummy positional embeddings, all 0s
-        instr_dummy_pos = torch.zeros(
-            len(instruction), instr_feats.shape[1], 3, device=instruction.device
-        )
-        instr_dummy_pos = self.relative_pe_layer(instr_dummy_pos)
+        if use_2d_pe:
+            instr_dummy_pos = torch.zeros(
+                len(instruction), instr_feats.shape[1], 2, device=instruction.device
+            )
+            instr_dummy_pos = self.relative_pe_layer_2D(instr_dummy_pos)
+        else:
+            instr_dummy_pos = torch.zeros(
+                len(instruction), instr_feats.shape[1], 3, device=instruction.device
+            )
+            instr_dummy_pos = self.relative_pe_layer(instr_dummy_pos)
         return instr_feats, instr_dummy_pos
 
     def encode_custom_states(self, custom_states):
@@ -295,6 +323,16 @@ class Encoder(nn.Module):
         # keep_mask (Np, B)
         # context_pos (B, Np, F, 2)
         # outputs of analogous shape, with smaller Np
+        sampled_context_features, sampled_context_pos = self.run_fps_with_lst(
+            context_features, [context_pos], keep_mask=keep_mask
+        )
+        return sampled_context_features, sampled_context_pos[0]
+
+    def run_fps_with_lst(self, context_features, context_pos_list, keep_mask=None):
+        # context_features (Np, B, F)
+        # keep_mask (Np, B)
+        # context_pos list[(B, Np, F, 2)]
+        # outputs of analogous shape, with smaller Np
         npts, bs, ch = context_features.shape
 
         if keep_mask is not None:
@@ -317,14 +355,20 @@ class Encoder(nn.Module):
             0,
             einops.rearrange(expanded_sampled_inds, "b npts c -> npts b c"),
         )
+        sampled_context_features = einops.rearrange(
+            sampled_context_features, "npts b c -> b npts c"
+        )
 
         # Sample positional embeddings
-        _, _, ch, npos = context_pos.shape
-        expanded_sampled_inds = (
-            sampled_inds.unsqueeze(-1).unsqueeze(-1).expand(-1, -1, ch, npos)
-        )
-        sampled_context_pos = torch.gather(context_pos, 1, expanded_sampled_inds)
-        return (sampled_context_features, sampled_context_pos)
+        sampled_context_pos_list = []
+        for context_pos in context_pos_list:
+            _, _, ch, npos = context_pos.shape
+            expanded_sampled_inds = (
+                sampled_inds.unsqueeze(-1).unsqueeze(-1).expand(-1, -1, ch, npos)
+            )
+            sampled_context_pos = torch.gather(context_pos, 1, expanded_sampled_inds)
+            sampled_context_pos_list.append(sampled_context_pos)
+        return (sampled_context_features, sampled_context_pos_list)
 
     def vision_language_attention(self, feats, instr_feats):
         feats, _ = self.vl_attention[0](

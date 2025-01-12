@@ -39,9 +39,19 @@ def get_to_remove_indices(pcd):
     return to_remove_indices
 
 
-def process_observation_from_raw(obs, obs_mode, image_size: int = 128, cam=None):
+def process_observation_from_raw(  # noqa: C901
+    obs,
+    obs_mode,
+    image_size: int = 128,
+    cam=None,
+    rgb_modality_keys=None,
+    slice_rgb_modality_to_ncam=False,
+):
     if obs_mode == "state":
         return {"state_obs": obs}
+
+    if rgb_modality_keys is None:
+        rgb_modality_keys = []
 
     paths, elems, _ = optree.tree_flatten_with_path(
         {**obs["sensor_param"], **obs["agent"], **obs["extra"]}
@@ -61,42 +71,72 @@ def process_observation_from_raw(obs, obs_mode, image_size: int = 128, cam=None)
             assert cam is not None
             image_size = int(_get_backend(pcd).sqrt(n_points // cam))
 
+        if slice_rgb_modality_to_ncam:
+            rgb_modality_keys = rgb_modality_keys[:cam]
+
+        if len(rgb_modality_keys) != cam:
+            raise ValueError(
+                f"Number of cameras in rgb_modality_keys ({len(rgb_modality_keys)}) does not match the number of cameras in the pointcloud ({cam})"
+            )
+
         to_remove_indices = get_to_remove_indices(pcd)
 
-        return {
-            **extra_elems,
-            "rgb_obs": (
-                einops.rearrange(
-                    obs["pointcloud"]["rgb"],
-                    "ix (cam h w) c -> ix cam c h w",
-                    cam=cam,
-                    h=image_size,
-                    w=image_size,
-                    c=3,
-                )
-                / 255.0
-            ),
-            "pcd_obs": einops.rearrange(
-                pcd[..., :3],
-                "ix (cam h w) c -> ix cam c h w",
+        rgb_obs = (
+            einops.rearrange(
+                obs["pointcloud"]["rgb"],
+                "ix (cam h w) c -> cam ix c h w",
                 cam=cam,
                 h=image_size,
                 w=image_size,
                 c=3,
-            ),
-            "pcd_mask": einops.rearrange(
-                ~to_remove_indices,
-                "ix (cam h w) -> ix cam 1 h w",
-                cam=cam,
-                h=image_size,
-                w=image_size,
-            ),
+            )
+            / 255.0
+        )
+        pcd_obs = einops.rearrange(
+            pcd[..., :3],
+            "ix (cam h w) c -> cam ix c h w",
+            cam=cam,
+            h=image_size,
+            w=image_size,
+            c=3,
+        )
+        pcd_mask = einops.rearrange(
+            ~to_remove_indices,
+            "ix (cam h w) -> cam ix 1 h w",
+            cam=cam,
+            h=image_size,
+            w=image_size,
+        )
+
+        vision_elems = {}
+        for cam_i, cam in enumerate(rgb_modality_keys):
+            vision_elems[f"rgb_obs.{cam}"] = rgb_obs[cam_i]
+            vision_elems[f"pcd_obs.{cam}"] = pcd_obs[cam_i]
+            vision_elems[f"pcd_mask.{cam}"] = pcd_mask[cam_i]
+
+        return {
+            **extra_elems,
+            **vision_elems,
         }
     elif obs_mode == "rgb":
         rgbs = optree.tree_flatten(obs["sensor_data"])[0]
+        # einops.rearrange(rgbs, "cam ix h w c -> ix cam h w c")
+
+        if slice_rgb_modality_to_ncam:
+            rgb_modality_keys = rgb_modality_keys[: len(rgbs)]
+
+        if len(rgb_modality_keys) != len(rgbs):
+            raise ValueError(
+                f"Number of cameras in rgb_modality_keys ({len(rgb_modality_keys)}) does not match the number of cameras in the rgb data ({len(rgbs)})"
+            )
+
+        vision_elems = {}
+        for cam_i, cam in enumerate(rgb_modality_keys):
+            vision_elems[f"rgb_obs.{cam}"] = rgbs[cam_i]
+
         return {
             **extra_elems,
-            "rgb_obs": einops.rearrange(rgbs, "cam ix h w c -> ix cam h w c"),
+            **vision_elems,
         }
 
     raise ValueError(f"obs_mode {obs_mode} not recognized")
@@ -126,7 +166,10 @@ def transform_episode_obs(
             if state_modality_keys:  # only if there are state modalities
                 obs_dict[key] = get_state_from_modality(loader_dict, state_modality_keys)
         elif key == "rgb_obs" or key == "pcd_obs" or key == "pcd_mask":
-            obs_dict[key] = segregate_vision_by_modality(loader_dict[key], rgb_modality_keys)
+            # need to combine cams
+            obs_dict[key] = segregate_vision_by_modality(
+                loader_dict, rgb_modality_keys, main_key=key
+            )
         else:
             obs_dict[key] = loader_dict[key]
 
@@ -190,21 +233,15 @@ def inverse_rotation_transformer(actions, rotation_transformer: RotationTransfor
     )
 
 
-def segregate_vision_by_modality(loaded, rgb_modality_keys):
+def segregate_vision_by_modality(loader_dict, rgb_modality_keys, main_key):
     if not rgb_modality_keys:
         raise ValueError("No rgb modality keys provided")
-    _, ncam, c, h, w = loaded.shape
-    if ncam != len(rgb_modality_keys):
-        raise ValueError(
-            f"Number of cameras in rgb_obs ({ncam}) does not match the number of rgb_modality_keys ({len(rgb_modality_keys)})"
-        )
-    return {k: loaded[:, cam_i] for cam_i, k in enumerate(rgb_modality_keys)}
+
+    return {k: loader_dict[f"{main_key}.{k}"] for k in rgb_modality_keys}
 
 
 def get_state_from_modality(loader_dict, state_modality_keys):
     if not state_modality_keys:
         raise ValueError("No state modality keys provided")
 
-    # states = [loader_dict[smod] for smod in state_modality_keys]
-    # return _get_cat_fn(states[0])(states, -1)
     return {k: loader_dict[k] for k in state_modality_keys}

@@ -1,10 +1,13 @@
 import functools
+import logging
 from functools import partial
+from pathlib import Path
 from types import MappingProxyType
 
 import einops
 import numpy as np
 import torch
+import zarr
 from optree import tree_map
 from torch.utils.data import Dataset
 from tqdm import tqdm
@@ -12,10 +15,15 @@ from tqdm import tqdm
 from manten.agents.utils.normalization import fit_consecutive
 from manten.networks.utils.rotation_transformer import RotationTransformer
 from manten.utils.utils_data import modulo_dataset
+from manten.utils.utils_file import normalize_filename
 from manten_evaluation.maniskill2.lib.utils_maniskill_common import (
     apply_static_transforms,
     transform_episode,
 )
+
+logger = logging.getLogger(__name__)
+
+CACHE_DIR = Path("~/.cache/manten/dataset_maniskill").expanduser()
 
 
 class LoaderDict:
@@ -25,6 +33,14 @@ class LoaderDict:
 
     def __getitem__(self, key):
         return self.load(self.epf(key=key))
+
+
+class ZarrLoaderDict:
+    def __init__(self, epf):
+        self.store = zarr.DirectoryStore(epf)
+
+    def __getitem__(self, key):
+        return zarr.open(self.store, mode="r")[key]
 
 
 @modulo_dataset
@@ -64,6 +80,9 @@ class ManiSkillDataset(Dataset):
         # ...
         load_count=None,
         use_mmap=False,
+        cache_stats=True,
+        ignore_stats_cache=False,
+        use_zarr=False,
     ):
         if obs_modalities is None:
             obs_modalities = self.FULL_OBS_MODALITIES[obs_mode]
@@ -85,10 +104,13 @@ class ManiSkillDataset(Dataset):
 
         path_obs_mode = self.OBS_MODE_FILE_NAMES[obs_mode]
 
+        self.use_zarr = use_zarr
         self.paths = {
             "action_lengths": f"{pack_root}/{task}/{path_obs_mode}/{control_mode}/traj_lengths.npy",
             "episode_format": partial(
-                "{pack_root}/{task}/{path_obs_mode}/{control_mode}/episode_{episode_idx}/{key}.npy".format,
+                "{pack_root}/{task}/{path_obs_mode}/{control_mode}/episode_{episode_idx}/{key}.npy".format
+                if not use_zarr
+                else "{pack_root}/{task}/{path_obs_mode}/{control_mode}/episode_{episode_idx}.zarr".format,
                 pack_root=pack_root,
                 task=task,
                 path_obs_mode=path_obs_mode,
@@ -96,7 +118,11 @@ class ManiSkillDataset(Dataset):
             ),
         }
 
-        self.episode_cache = {}
+        self.cache_stats = cache_stats
+        self.ignore_stats_cache = ignore_stats_cache
+        if cache_stats:
+            stats_cache_identifier = f"{train}_{test_ratio}_{pack_root}_{task}_{obs_mode}_{obs_modalities}_{state_modality_keys}_{rgb_modality_keys}_{control_mode}_{load_count}"
+            self.stats_cache_identifier = normalize_filename(stats_cache_identifier)
 
         action_lengths = np.load(self.paths["action_lengths"])
         action_lengths = action_lengths[np.argsort(action_lengths[:, 0])]
@@ -178,21 +204,28 @@ class ManiSkillDataset(Dataset):
             act_seq = torch.cat([act_seq, pad_action.repeat(end - L, 1)], dim=0)
             # making the robot (arm and gripper) stay still
         assert act_seq.shape[0] == self.pred_horizon
-
         # |o|o|                             observations: 2
         # |p|p|p|p|p|p|p|p|p|p|p|p|p|p|p|p| actions predicted: 16
         #
         # | |a|a|a|a|a|a|a|a|               actions executed: 8
-        return {
-            "observations": obs_dict,
-            "actions": act_seq,
+
+        meta_dict = {
+            "3d_mask": torch.Tensor([self.obs_mode == "pointcloud"]).bool(),
+            "2d_mask": torch.Tensor(
+                [self.obs_mode == "pointcloud" or self.obs_mode == "rgb"]
+            ).bool(),
         }
+
+        return {"observations": obs_dict, "actions": act_seq, "meta": meta_dict}
 
     @functools.cache  # noqa: B019
     def get_episode(self, idx):
         epf = partial(self.paths["episode_format"], episode_idx=idx)
-        load = partial(np.load, mmap_mode="r" if self.use_mmap else None)
-        loader_dict = LoaderDict(load, epf)
+        if not self.use_zarr:
+            load = partial(np.load, mmap_mode="r" if self.use_mmap else None)
+            loader_dict = LoaderDict(load, epf)
+        else:
+            loader_dict = ZarrLoaderDict(epf())
 
         return transform_episode(
             loader_dict,
@@ -205,6 +238,53 @@ class ManiSkillDataset(Dataset):
 
     @functools.cache  # noqa: B019
     def get_dataset_info(self):
+        fit_results = self.__fit_stats()
+
+        sample_batch = self[0]
+
+        infos = {
+            "actions_stats": fit_results["actions_fit"],
+            "obs_horizon": self.obs_horizon,
+            "pred_horizon": self.pred_horizon,
+            "actions_shape": list(sample_batch["actions"].shape),
+            "observations_shape": tree_map(
+                lambda x: list(x.shape), sample_batch["observations"]
+            ),
+            "rotation_dim": (
+                self.rotation_transformer.to_dim
+                if self.rotation_transformer is not None
+                else 3  # maniskill default euler angles
+            ),
+        }
+
+        if "pcd_fit" in fit_results:
+            infos["pcd_stats"] = fit_results["pcd_fit"]
+
+        if "tcp_pose" in self.state_modality_keys:
+            infos["tcp_pose_key"] = "tcp_pose"
+
+        # agent wrappers need this, and for now just manually match
+        # if self.rotation_transformer is not None:
+        #     infos["rotation_transformer"] = self.rotation_transform
+
+        return infos
+
+    def __fit_stats(self):
+        if self.cache_stats:
+            cache_path = CACHE_DIR / "stats_cache"
+            cache_path.mkdir(parents=True, exist_ok=True)
+
+            cache_file = cache_path / f"{self.stats_cache_identifier}.pkl"
+
+            if not self.ignore_stats_cache and cache_file.exists():
+                import pickle
+
+                logger.info("Loading stats from cache: %s", cache_file)
+                with cache_file.open("rb") as f:
+                    return pickle.load(f)  # noqa: S301
+
+        logger.info("Fitting stats...")
+
         actions_fit = None
         pcd_fit = None
         for idx in tqdm(range(len(self.action_lengths))):
@@ -228,51 +308,39 @@ class ManiSkillDataset(Dataset):
                 )
                 pcd_fit = fit_consecutive(masked_pcd, pcd_fit)
 
-        actions_fit = tree_map(lambda x: x.tolist(), actions_fit[0])
-        if pcd_fit is not None:
-            pcd_fit = tree_map(lambda x: x.tolist(), pcd_fit[0])
-
-        sample_batch = self[0]
-
-        infos = {
-            "actions_stats": actions_fit,
-            "obs_horizon": self.obs_horizon,
-            "pred_horizon": self.pred_horizon,
-            "actions_shape": list(sample_batch["actions"].shape),
-            "observations_shape": tree_map(
-                lambda x: list(x.shape), sample_batch["observations"]
-            ),
-            "rotation_dim": (
-                self.rotation_transformer.to_dim
-                if self.rotation_transformer is not None
-                else 3  # maniskill default euler angles
-            ),
-        }
+        out_dict = {}
+        out_dict["actions_fit"] = tree_map(lambda x: x.tolist(), actions_fit[0])
 
         if pcd_fit is not None:
-            infos["pcd_stats"] = pcd_fit
+            out_dict["pcd_fit"] = tree_map(lambda x: x.tolist(), pcd_fit[0])
 
-        if "tcp_pose" in self.state_modality_keys:
-            infos["tcp_pose_key"] = "tcp_pose"
+        if self.cache_stats:
+            from accelerate import PartialState
 
-        # agent wrappers need this, and for now just manually match
-        # if self.rotation_transformer is not None:
-        #     infos["rotation_transformer"] = self.rotation_transform
+            state = PartialState()
 
-        return infos
+            if state.is_main_process:
+                import pickle
+
+                logger.info("Saving stats to cache: %s", cache_file)
+                with cache_file.open("wb") as f:
+                    pickle.dump(out_dict, f)
+
+        return out_dict
 
 
 if __name__ == "__main__":
     dataset = ManiSkillDataset(
         simulated_length=10000000,
         test_ratio=0.05,
-        task="PegInsertionSide-v1",
+        task="PickCube-v1",
         pack_root="/home/i53/student/yagmurlu/code/manten/data/maniskill2/packed_demos",
         obs_horizon=2,
         pred_horizon=16,
         obs_mode="pointcloud",
         # state_modality_keys=["goal_pos"],
-        rgb_modality_keys=["camera1", "gripper1"],
+        # rgb_modality_keys=["camera1", "gripper1"],
+        rgb_modality_keys=["camera1"],
         control_mode="pd_ee_delta_pose",
         use_mmap=True,
         load_count=35,

@@ -58,7 +58,9 @@ class LDDPAgentWrapper:
         return getattr(self.__agent, attr)
 
     def __proc_obs(self, obs):
-        loaded_obs = process_observation_from_raw(obs, self.__obs_mode)
+        loaded_obs = process_observation_from_raw(
+            obs, self.__obs_mode, rgb_modality_keys=self.__rgb_modality_keys
+        )
         obs_dict = transform_episode_obs(
             loaded_obs,
             obs_mode=self.__obs_mode,

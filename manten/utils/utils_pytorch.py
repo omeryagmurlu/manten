@@ -41,3 +41,7 @@ def replace_submodules(
     ]
     assert len(bn_list) == 0
     return root_module
+
+
+def get_ones_shape_like(x):
+    return [1] * len(x.shape)

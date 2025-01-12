@@ -155,7 +155,7 @@ class DiffusionHead(nn.Module):
             context: (B, N, F, 2)
             instr_feats: (B, max_instruction_length, F)
             adaln_gripper_feats: (B, nhist, F)
-            fps_feats: (N, B, F), N < context_feats.size(1)
+            fps_feats: (B, N, F), N < context_feats.size(1)
             fps_pos: (B, N, F, 2)
             has_3d: (B,) indicating if the observation is 3D
         """
@@ -183,10 +183,11 @@ class DiffusionHead(nn.Module):
         traj_feats = einops.rearrange(traj_feats, "b l c -> l b c")
         context_feats = einops.rearrange(context_feats, "b l c -> l b c")
         adaln_gripper_feats = einops.rearrange(adaln_gripper_feats, "b l c -> l b c")
+        fps_feats = einops.rearrange(fps_feats, "b l c -> l b c")
         (pos_pred, rot_pred, openess_pred) = self.prediction_head(
             trajectory[..., :3],
             traj_feats,
-            context[..., :3],
+            context,
             context_feats,
             timestep,
             adaln_gripper_feats,
@@ -201,7 +202,7 @@ class DiffusionHead(nn.Module):
         self,
         gripper_pcd,
         gripper_features,
-        context_pcd,
+        rel_context_pos,
         context_features,
         timesteps,
         curr_gripper_features,
@@ -216,8 +217,8 @@ class DiffusionHead(nn.Module):
         Args:
             gripper_pcd: A tensor of shape (B, N, 3)
             gripper_features: A tensor of shape (N, B, F)
-            context_pcd: A tensor of shape (B, N, 3)
             context_features: A tensor of shape (N, B, F)
+            rel_context_pos: A tensor of shape (B, N, F, 2)
             timesteps: A tensor of shape (B,) indicating the diffusion step
             curr_gripper_features: A tensor of shape (M, B, F)
             sampled_context_features: A tensor of shape (K, B, F)
@@ -230,7 +231,7 @@ class DiffusionHead(nn.Module):
 
         # Positional embeddings
         rel_gripper_pos = self.relative_pe_layer(gripper_pcd)
-        rel_context_pos = self.relative_pe_layer(context_pcd)
+        # rel_context_pos = self.relative_pe_layer(context_pcd)
 
         # # 2D vs 3D marker
         # dim_2d_3d = self.dim_2d_3d_emb(has_3d.long())

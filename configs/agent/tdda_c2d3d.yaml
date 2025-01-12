@@ -1,6 +1,9 @@
+defaults:
+  - metric@agent.metric: combined_2d_3d
+
 _diffusion_timesteps: ???
 agent:
-  _target_: manten.agents.td_diffuser_actor.three_dda_agent.ThreeDDAAgent
+  _target_: manten.agents.tdda_combined_2d3d.c2d3d_tdda_agent.Combined2D3DTDDAAgent
   position_noise_scheduler:
     _target_: diffusers.schedulers.DDPMScheduler
     num_train_timesteps: ${..._diffusion_timesteps}
@@ -24,11 +27,6 @@ agent:
     use_instruction: True
     lang_enhanced: True
   sigmoid_openness_in_inference: True
-  metric:
-    _target_: manten.metrics.mse_loss_pose_bce_loss_gripper_metric.MSELossPoseBCEWithLogitsLossGripperMetric
-    pos_weight: 10.0
-    rot_weight: 5.0
-    gripper_weight: 1.0
   relative: ???
   act_horizon: ???
   # use_instruction: True

@@ -54,6 +54,48 @@ class RotaryPositionEncoding(nn.Module):
         return position_code
 
 
+class RotaryPositionEncoding2D(RotaryPositionEncoding):
+    def __init__(self, feature_dim, pe_type="Rotary2D"):
+        super().__init__(feature_dim, pe_type)
+
+    @torch.no_grad()
+    def forward(self, xy):
+        """
+        @param xy: [B,N,2]
+        @return:
+        """
+        bsize, npoint, _ = xy.shape
+        (x_position, y_position) = (xy[..., 0:1], xy[..., 1:2])
+        div_term = torch.exp(
+            torch.arange(0, self.feature_dim // 2, 2, dtype=torch.float, device=xy.device)
+            * (-math.log(10000.0) / (self.feature_dim // 2))
+        )
+        div_term = div_term.view(1, 1, -1)  # [1, 1, d//4]
+
+        sinx = torch.sin(x_position * div_term)  # [B, N, d//4]
+        cosx = torch.cos(x_position * div_term)
+        siny = torch.sin(y_position * div_term)
+        cosy = torch.cos(y_position * div_term)
+
+        (sinx, cosx, siny, cosy) = (
+            torch.stack([feat, feat], -1).view(bsize, npoint, -1)
+            for feat in [sinx, cosx, siny, cosy]
+        )
+
+        position_code = torch.stack(
+            [
+                torch.cat([cosx, cosy], dim=-1),  # cos_pos
+                torch.cat([sinx, siny], dim=-1),  # sin_pos
+            ],
+            dim=-1,
+        )
+
+        if position_code.requires_grad:
+            position_code = position_code.detach()
+
+        return position_code
+
+
 class RotaryPositionEncoding3D(RotaryPositionEncoding):
     def __init__(self, feature_dim, pe_type="Rotary3D"):
         super().__init__(feature_dim, pe_type)

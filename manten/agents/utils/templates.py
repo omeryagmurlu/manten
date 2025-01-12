@@ -8,10 +8,15 @@ import torch
 
 from manten.agents.utils.base_agent import BaseAgent
 from manten.utils.utils_decorators import with_partial
+from manten.utils.utils_pytorch import get_ones_shape_like
 
 
 def select_keys(dc, *keys):
     return {k: dc[k] for k in keys}
+
+
+def omit_keys(dc, *keys):
+    return {k: v for k, v in dc.items() if k not in keys}
 
 
 class AdaptActionsMixin:
@@ -96,7 +101,7 @@ class BatchObservationActionAgentTemplate(AgentActionTemplateMixins, ABC):
                 )
 
             @torch.no_grad()
-            def predict_actions(self, *, observations):
+            def predict_actions(self, *, observations, **kwargs):
                 """Predicts actions based on observations.
                 Args:
                     observations (torch.Tensor): Input observations.
@@ -108,20 +113,18 @@ class BatchObservationActionAgentTemplate(AgentActionTemplateMixins, ABC):
                 # handle the device placement, autocast etc. TrainLoops directly call
                 # self("mode", ...) instead of these methods, so this is mostly only
                 # concern for inference.
-                _metric, pred_actions = self("eval", {"observations": observations})
+                _metric, pred_actions = self("eval", {"observations": observations, **kwargs})
                 return pred_actions
 
             def train_step(self, batch: dict):
-                gt, pred = super().compute_train_gt_and_pred(
-                    observations=batch["observations"], actions=batch["actions"]
-                )
+                gt, pred = super().compute_train_gt_and_pred(**batch)
                 self.metric.feed(ground=gt, prediction=pred)
                 return self.metric
 
             @torch.no_grad()
             def eval_step(self, batch: dict, *_, **__):
-                observations = batch["observations"]
-                pred_actions = super().predict_actions(observations)
+                batch_wo_actions = omit_keys(batch, "actions")
+                pred_actions = super().predict_actions(**batch_wo_actions)
 
                 if "actions" in batch:
                     gt_actions = super().adapt_actions_from_ds_actions(batch["actions"])
@@ -171,14 +174,11 @@ class BatchStateObservationActionAgentTemplate(AgentActionTemplateMixins, ABC):
                 self.observations_shape = self.observations_shape["state_obs"]
                 super()._pre_template_init()
 
-            def predict_actions_from_state(self, state_obs):
-                return self.predict_actions(observations={"state_obs": state_obs})
-
-            def compute_train_gt_and_pred(self, observations, actions):
+            def compute_train_gt_and_pred(self, observations, actions, **_):
                 state_obs = observations["state_obs"]
                 return super().compute_train_gt_and_pred(state_obs, actions)
 
-            def predict_actions(self, observations):
+            def predict_actions(self, observations, **_):
                 state_obs = observations["state_obs"]
                 return super().predict_actions(state_obs)
 
@@ -208,12 +208,12 @@ class BatchRGBObservationActionAgentTemplate(AgentActionTemplateMixins, ABC):
                     self.observations_shape, "rgb_obs", "state_obs"
                 )
 
-            def compute_train_gt_and_pred(self, observations, actions):
+            def compute_train_gt_and_pred(self, observations, actions, **_):
                 rgb_obs = observations["rgb_obs"]
                 state_obs = observations["state_obs"]
                 return super().compute_train_gt_and_pred(rgb_obs, state_obs, actions)
 
-            def predict_actions(self, observations):
+            def predict_actions(self, observations, **_):
                 rgb_obs = observations["rgb_obs"]
                 state_obs = observations["state_obs"]
                 return super().predict_actions(rgb_obs, state_obs)
@@ -244,7 +244,7 @@ class BatchPCDObservationActionAgentTemplate(AgentActionTemplateMixins, ABC):
                     self.observations_shape, "pcd_obs", "rgb_obs", "pcd_mask", "state_obs"
                 )
 
-            def compute_train_gt_and_pred(self, observations, actions):
+            def compute_train_gt_and_pred(self, observations, actions, **_):
                 pcd_obs = observations["pcd_obs"]
                 rgb_obs = observations["rgb_obs"]
                 pcd_mask = observations["pcd_mask"]
@@ -253,7 +253,7 @@ class BatchPCDObservationActionAgentTemplate(AgentActionTemplateMixins, ABC):
                     pcd_obs, rgb_obs, pcd_mask, state_obs, actions
                 )
 
-            def predict_actions(self, observations):
+            def predict_actions(self, observations, **_):
                 pcd_obs = observations["pcd_obs"]
                 rgb_obs = observations["rgb_obs"]
                 pcd_mask = observations["pcd_mask"]
@@ -280,5 +280,113 @@ class BatchPCDObservationActionAgentTemplate(AgentActionTemplateMixins, ABC):
         pcd_mask: torch.Tensor,
         state_obs: torch.Tensor,
         actions: torch.Tensor,
+    ) -> tuple[torch.Tensor, torch.Tensor]:
+        raise NotImplementedError
+
+
+class BatchPCDOrRGBObservationActionAgentTemplate(AgentActionTemplateMixins, ABC):
+    @staticmethod
+    @with_partial
+    def make_agent(
+        template_cls: type["BatchPCDOrRGBObservationActionAgentTemplate"], *args, **kwargs
+    ):
+        @BatchObservationActionAgentTemplate.make_agent(*args, **kwargs)
+        class BPCDOAATmplToBOAATmpl(template_cls):
+            def _pre_template_init(self):
+                self.observations_shape = select_keys(
+                    self.observations_shape, "pcd_obs", "rgb_obs", "pcd_mask", "state_obs"
+                )
+
+            def compute_train_gt_and_pred(self, observations, actions, meta):
+                observations = self.__mask_observations_by_vision_modality(
+                    observations, meta["3d_mask"]
+                )
+
+                pcd_obs = observations["pcd_obs"]
+                rgb_obs = observations["rgb_obs"]
+                pcd_mask = observations["pcd_mask"]
+                state_obs = observations["state_obs"]
+                return super().compute_train_gt_and_pred(
+                    pcd_obs, rgb_obs, pcd_mask, state_obs, actions, meta["3d_mask"]
+                )
+
+            def predict_actions(self, observations, meta):
+                # this is used as the modality for the prediction
+                observations = self.__mask_observations_by_vision_modality(
+                    observations, meta["3d_mask"]
+                )
+
+                pcd_obs = observations["pcd_obs"]
+                rgb_obs = observations["rgb_obs"]
+                pcd_mask = observations["pcd_mask"]
+                state_obs = observations["state_obs"]
+                return super().predict_actions(
+                    pcd_obs, rgb_obs, pcd_mask, state_obs, meta["3d_mask"]
+                )
+
+            def __mask_observations_by_vision_modality(self, observations, keep_mask_3d):
+                bs, dtype, device = self.__get_bs_dtype_device(observations)
+                if "pcd_obs" not in observations:
+                    observations["pcd_obs"] = {
+                        cam: torch.zeros(bs, *list(shp), dtype=dtype, device=device)
+                        for cam, shp in self.observations_shape["pcd_obs"].items()
+                    }
+                if "pcd_mask" not in observations:
+                    observations["pcd_mask"] = {
+                        cam: torch.ones(bs, *list(shp), dtype=dtype, device=device)
+                        for cam, shp in self.observations_shape["pcd_mask"].items()
+                    }
+
+                observations["pcd_obs"] = {
+                    cam: torch.where(
+                        keep_mask_3d.view(
+                            keep_mask_3d.shape[0], *get_ones_shape_like(val)[1:]
+                        ),
+                        val,
+                        torch.zeros_like(val),
+                    )
+                    for cam, val in observations["pcd_obs"].items()
+                }
+
+                observations["pcd_mask"] = {
+                    cam: torch.where(
+                        keep_mask_3d.view(
+                            keep_mask_3d.shape[0], *get_ones_shape_like(val)[1:]
+                        ),
+                        val,
+                        torch.ones_like(val),
+                    )
+                    for cam, val in observations["pcd_mask"].items()
+                }
+
+                return observations
+
+            @staticmethod
+            def __get_bs_dtype_device(observations):
+                first_rgb = next(iter(observations["rgb_obs"].values()))
+                return first_rgb.shape[0], first_rgb.dtype, first_rgb.device
+
+        return BPCDOAATmplToBOAATmpl
+
+    @abstractmethod
+    def predict_actions(
+        self,
+        pcd_obs: torch.Tensor,
+        rgb_obs: torch.Tensor,
+        pcd_mask: torch.Tensor,
+        state_obs: torch.Tensor,
+        keep_mask_3d: torch.Tensor,
+    ) -> torch.Tensor:
+        raise NotImplementedError
+
+    @abstractmethod
+    def compute_train_gt_and_pred(
+        self,
+        pcd_obs: torch.Tensor,
+        rgb_obs: torch.Tensor,
+        pcd_mask: torch.Tensor,
+        state_obs: torch.Tensor,
+        actions: torch.Tensor,
+        keep_mask_3d: torch.Tensor,
     ) -> tuple[torch.Tensor, torch.Tensor]:
         raise NotImplementedError

@@ -6,9 +6,11 @@ import logging
 from concurrent.futures import ProcessPoolExecutor
 from functools import partial
 from pathlib import Path
+from shutil import rmtree
 
 import h5py
 import numpy as np
+import zarr
 from tqdm import tqdm
 
 from manten_evaluation.maniskill2.lib.utils_maniskill_common import (
@@ -62,7 +64,20 @@ def load_episode_hdf5(path, num_episode=None, single=False):
     return ret
 
 
-def pack_episode(episode_idx, *, h5filename, outdir, obs_mode):
+ONE_MiB = 1024 * 1024
+
+
+def pack_episode(
+    episode_idx,
+    *,
+    h5filename,
+    outdir,
+    obs_mode,
+    use_zarr,
+    rgb_modality_keys: list[str],
+    zarr_obs_chunk=2,
+    zarr_actions_chunk=20,
+):
     # logging.info(f"Packing episode {episode_idx}")
 
     episode = load_episode_hdf5(h5filename, episode_idx, single=True)[f"traj_{episode_idx}"]
@@ -72,16 +87,48 @@ def pack_episode(episode_idx, *, h5filename, outdir, obs_mode):
     # cpaths = [".".join(elems) for elems in paths]
     # dc = dict(zip(cpaths, leaves, strict=True))
 
-    pco = process_observation_from_raw(episode["obs"], obs_mode=obs_mode)
+    pco = process_observation_from_raw(
+        episode["obs"],
+        obs_mode=obs_mode,
+        rgb_modality_keys=rgb_modality_keys,
+        slice_rgb_modality_to_ncam=True,
+    )
     dc = {
         **pco,
         "actions": episode["actions"],
     }
 
-    ep_dir = outdir / f"episode_{episode_idx}"
-    ep_dir.mkdir(parents=True, exist_ok=True)
-    for key, value in dc.items():
-        np.save(ep_dir / f"{key}.npy", value)
+    if not use_zarr:
+        ep_dir = outdir / f"episode_{episode_idx}"
+        if ep_dir.exists():
+            rmtree(ep_dir)
+        ep_dir.mkdir(parents=True, exist_ok=True)
+        for key, value in dc.items():
+            np.save(ep_dir / f"{key}.npy", value)
+    else:
+        ep_dir = outdir / f"episode_{episode_idx}.zarr"
+        if ep_dir.exists():
+            rmtree(ep_dir)
+        zarr_store = zarr.DirectoryStore(str(ep_dir))
+        zarr_group = zarr.group(zarr_store, overwrite=True)
+        for key, value in dc.items():
+            zarr_chunk_size = zarr_actions_chunk if key == "actions" else zarr_obs_chunk  # noqa: F841
+
+            key_len = len(value)
+            zarr_shard_size = min(
+                key_len, np.ceil(key_len / (value.nbytes / ONE_MiB)).astype(int)
+            )
+
+            # # zarrV2 does not support shards, so just aim for min 1MB chunks
+            # zarr_chunk_size = max(zarr_shard_size, zarr_chunk_size)
+
+            zarr_group.create_dataset(
+                name=key,
+                data=value,
+                chunks=(zarr_shard_size, *value.shape[1:]),
+                # chunks=(zarr_chunk_size, *value.shape[1:]),
+                # shards=(zarr_shard_size, *value.shape[1:]),
+            )
 
     return [episode_idx, action_length]
 
@@ -98,7 +145,7 @@ def pack_episodes(chunk, **kwargs):
     return np.array(action_lengths)
 
 
-def pack_task(filename, outdir, n_proc, obs_mode, load_count=None, parallel=True):
+def pack_task(filename, outdir, n_proc, load_count=None, parallel=True, **kwargs):
     logging.info(f"Packing task from {filename} to {outdir}")
     json_data = load_json(str(filename).replace(".h5", ".json"))
 
@@ -112,13 +159,13 @@ def pack_task(filename, outdir, n_proc, obs_mode, load_count=None, parallel=True
         logging.info(f"Packing {num_episodes} episodes in {n_proc} processes")
         with ProcessPoolExecutor(max_workers=n_proc) as executor:
             action_lengths = executor.map(
-                partial(pack_episodes, h5filename=filename, outdir=outdir, obs_mode=obs_mode),
+                partial(pack_episodes, h5filename=filename, outdir=outdir, **kwargs),
                 enumerate(chunks),
             )
     else:
         logging.info(f"Packing {num_episodes} episodes in a single process")
         action_lengths = [
-            pack_episodes(chunk, h5filename=filename, outdir=outdir, obs_mode=obs_mode)
+            pack_episodes(chunk, h5filename=filename, outdir=outdir, **kwargs)
             for chunk in enumerate(chunks)
         ]
     logging.info(f"Packed {num_episodes} episodes")
@@ -191,8 +238,29 @@ def main():
         help="The simulation backend",
         default="cpu",
     )
+    parser.add_argument(
+        "--use_zarr",
+        action="store_true",
+        help="If set, the output will be zarr files",
+        default=False,
+    )
+    parser.add_argument(
+        "--rgb_modality_keys",
+        type=str,
+        required=False,
+        help="The keys of the rgb modalities",
+        default=None,
+    )
 
     args = parser.parse_args()
+
+    if args.rgb_modality_keys is not None:
+        args.rgb_modality_keys = args.rgb_modality_keys.split(",")
+    else:
+        args.rgb_modality_keys = [
+            "camera1",
+            "gripper1",
+        ]  # this will be sliced afterwards to fit the number of cameras
 
     logging.info(f"Starting packing process with task: {args.task} and path: {args.path}")
 
@@ -230,6 +298,8 @@ def main():
             load_count=args.load_count,
             obs_mode=args.obs_mode,
             parallel=not args.debug_run,
+            use_zarr=args.use_zarr,
+            rgb_modality_keys=args.rgb_modality_keys,
         )
 
     logging.info("Packing process completed")

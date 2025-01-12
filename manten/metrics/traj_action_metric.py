@@ -1,58 +1,10 @@
 import numpy as np
 import torch.nn.functional as F
 
-from manten.utils.utils_mixins import shallow_copy_mixin_factory
+from manten.metrics.utils.utils_loss import binary_cross_entropy_with_logits_with_hinge_domain
 from manten.utils.utils_pytree import with_tree_map
 
 from .utils.base_metric import BaseMetric, BaseStats
-
-
-def binary_cross_entropy_with_logits_with_hinge_domain(inp, target, *args, **kwargs):
-    """
-    This function is a wrapper around F.binary_cross_entropy_with_logits that
-    maps the target domain from [-1, 1] to [0, 1] before calling the function.
-    """
-    assert (target == -1).logical_or(target == 1).all(), "Target must be in {-1, 1}"
-    target = (target + 1) / 2
-    return F.binary_cross_entropy_with_logits(inp, target, *args, **kwargs)
-
-
-class MSELossPoseBCEGripperMetric(
-    shallow_copy_mixin_factory("pos_weight", "rot_weight", "gripper_weight"), BaseMetric
-):
-    def __init__(self, pos_weight=None, rot_weight=None, gripper_weight=None):
-        super().__init__()
-
-        self.pos_weight = pos_weight
-        self.rot_weight = rot_weight
-        self.gripper_weight = gripper_weight
-
-    def loss(self):
-        return (
-            self.pos_loss() * self.pos_weight
-            + self.rot_loss() * self.rot_weight
-            + self.gripper_loss() * self.gripper_weight
-        )
-
-    def pos_loss(self):
-        return F.mse_loss(self.prediction[..., :3], self.ground[..., :3])
-
-    def rot_loss(self):
-        # infer rot dim from shape, we'll use mse anyways so concrete type doesn't matter
-        rot_dim_end = self.prediction.shape[-1] - 1
-        return F.mse_loss(
-            self.prediction[..., 3:rot_dim_end], self.ground[..., 3:rot_dim_end]
-        )
-
-    def gripper_loss(self):
-        """requires the gripper to be -1 or 1"""
-        return binary_cross_entropy_with_logits_with_hinge_domain(
-            self.prediction[..., -1:], self.ground[..., -1:]
-        )
-
-    @with_tree_map(lambda x: x.detach().cpu().numpy())
-    def metrics(self):
-        return {"loss": self.loss()}
 
 
 class PosRotGripperStats(BaseStats):

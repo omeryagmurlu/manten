@@ -1,11 +1,14 @@
 from abc import ABC, abstractmethod
 
-from manten.utils.utils_mixins import shallow_copy_mixin_factory, state_dict_mixin_factory
+from manten.utils.utils_mixins import (
+    recursive_copy_mixin_factory,
+    recursive_state_dict_mixin_factory,
+)
 
 
 class BaseMetric(
-    shallow_copy_mixin_factory("ground", "prediction"),
-    state_dict_mixin_factory("ground", "prediction"),
+    recursive_copy_mixin_factory("ground", "prediction"),
+    recursive_state_dict_mixin_factory("ground", "prediction"),
     ABC,
 ):
     def __init__(self):
@@ -38,8 +41,8 @@ class BaseMetric(
 
 
 class BaseStats(
-    shallow_copy_mixin_factory("stats"),
-    state_dict_mixin_factory("stats"),
+    recursive_copy_mixin_factory("stats"),
+    recursive_state_dict_mixin_factory("stats"),
     BaseMetric,
     ABC,
 ):

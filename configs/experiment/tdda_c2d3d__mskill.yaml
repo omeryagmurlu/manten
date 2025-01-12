@@ -1,7 +1,7 @@
 # @package _global_
 
 defaults:
-  - /agent: tdda
+  - /agent: tdda_c2d3d
   - /datamodule: maniskill
   - /tasks/maniskill_tasks@task_spec: pick_cube_v1
 
@@ -21,8 +21,8 @@ training:
     every_n_global_steps: 60000
     skip_first_global_steps: 0
 
-  sanity_check: False
-  log_train_timing: True
+  # sanity_check: False
+  # log_train_timing: True
   # resume_from_save: /home/i53/student/yagmurlu/code/manten/outputs/training/2024-12-24/18-59-50/accelerate/checkpoint_29
 
   # ema: null
@@ -48,11 +48,11 @@ datamodule:
   _control_mode: pd_ee_delta_pose
   _rotation_transform: rotation_6d
 
-  _batch_size: 512
+  _batch_size: 256
   _train_target_iters: ${_detailed_metrics_every_n_gs}
   _num_workers: 2
   _prefetch_factor: 2
-  _load_count: 100
+  _load_count: 200
   _use_mmap: False
 
 agent:
