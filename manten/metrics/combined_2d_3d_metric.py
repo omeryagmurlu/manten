@@ -1,7 +1,10 @@
 import torch
 
 from manten.metrics.utils.base_metric import BaseMetric
-from manten.utils.utils_mixins import recursive_copy_mixin_factory
+from manten.utils.utils_mixins import (
+    recursive_copy_mixin_factory,
+    recursive_state_dict_mixin_factory,
+)
 from manten.utils.utils_pytree import with_tree_map
 
 
@@ -10,6 +13,11 @@ class Combined2D3DMetric(
         "weight_action_2d",
         "weight_action_3d",
         "weight_action_consistency",
+        "metric_action_2d",
+        "metric_action_3d",
+        "metric_action_consistency",
+    ),
+    recursive_state_dict_mixin_factory(
         "metric_action_2d",
         "metric_action_3d",
         "metric_action_consistency",

@@ -4,7 +4,7 @@ defaults:
   - common
 
 datamodule:
-  _load_count: 100
+  _load_count: 25
 
 training:
   num_epochs: 3
