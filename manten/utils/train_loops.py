@@ -12,7 +12,11 @@ from tabulate import tabulate
 from manten.utils.debug_utils import TrainTimer
 from manten.utils.logging import get_logger
 from manten.utils.progbar import progbar
-from manten.utils.utils_checkpointing import save_agent_config, save_model_to_safetensors
+from manten.utils.utils_checkpointing import (
+    add_omegaconf_to_safe_globals,
+    save_agent_config,
+    save_model_to_safetensors,
+)
 from manten.utils.utils_decorators import with_state_dict
 from manten.utils.utils_visualization import handle_rich_media_for_logs
 
@@ -78,7 +82,11 @@ class TrainLoops:
         optimizer,
         lr_scheduler,
         log_aggregator,
-        custom_evaluator: CustomEvaluator | Callable[..., CustomEvaluator] | list[CustomEvaluator] | list[Callable[..., CustomEvaluator]] | None,
+        custom_evaluator: CustomEvaluator
+        | Callable[..., CustomEvaluator]
+        | list[CustomEvaluator]
+        | list[Callable[..., CustomEvaluator]]
+        | None,
         ema,
         whole_cfg,
     ):
@@ -120,14 +128,14 @@ class TrainLoops:
 
             mean_epoch_loss, last_batch_loss = self.train_loop()
 
+            if self.every_n_after_train(self.cfg.save):
+                self.save_checkpoint(mean_epoch_loss)
+
             with torch.no_grad():
                 self.agent.eval()
                 self.trigger_validation()
                 if self.ema:
                     self.trigger_validation(use_ema=True)
-
-            if self.every_n_after_train(self.cfg.save):
-                self.save_checkpoint(mean_epoch_loss)
 
             self.state.epoch += 1
         logger.info("training finished, trained for %d epochs", self.state.epoch)
@@ -283,7 +291,11 @@ class TrainLoops:
         self.free_memory()
         self.accelerator.wait_for_everyone()
         if self.accelerator.is_main_process:
-            custom_evaluators = self.custom_evaluator if isinstance(self.custom_evaluator, list) else [self.custom_evaluator]
+            custom_evaluators = (
+                self.custom_evaluator
+                if isinstance(self.custom_evaluator, list)
+                else [self.custom_evaluator]
+            )
 
             for idx, custom_evaluator in enumerate(custom_evaluators):
                 proc_name = f"custom_eval{'-ema' if use_ema else ''}-{idx}"
@@ -390,10 +402,18 @@ class TrainLoops:
         return metric, trajectory
 
     def resume_from_save(self, from_str):
-        # TODO: maybe later automatic loading of last/best checkpoint
+        add_omegaconf_to_safe_globals()
+
         checkpoint_to_load = from_str
 
         self.accelerator.load_state(checkpoint_to_load)
+
+        # TODO: fix this
+        if self.ema:
+            self.ema.manager.shadow_params = [
+                param.to(self.accelerator.device) for param in self.agent.parameters()
+            ]
+
         logger.info(
             "resuming from checkpoint@epoch:%d via %s", self.state.epoch, checkpoint_to_load
         )

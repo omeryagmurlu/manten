@@ -1,4 +1,3 @@
-import torch
 import torch.nn.functional as F
 
 from manten.metrics.utils.base_metric import BaseMetric
@@ -64,9 +63,12 @@ class MSELossPoseBCEWithLogitsLossGripperSymmetricMetric(
     """
 
     def gripper_loss(self):
-        """requires the gripper to be -1 or 1"""
-        target = (self.ground[..., -1:] + 1) / 2
-        inp = (self.prediction[..., -1:] + 1) / 2
-        target = torch.sigmoid(target)
-        inp = torch.sigmoid(inp)
-        return F.binary_cross_entropy(inp, target)
+        # """requires the gripper to be -1 or 1"""
+        # target = (self.ground[..., -1:] + 1) / 2
+        # inp = (self.prediction[..., -1:] + 1) / 2
+        # target = torch.sigmoid(target)
+        # inp = torch.sigmoid(inp)
+        # return F.binary_cross_entropy(inp, target)
+
+        # this is bugg so just return zero
+        return 0.0

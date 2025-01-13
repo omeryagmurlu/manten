@@ -1,6 +1,7 @@
 from logging import getLogger
 
 import hydra
+import omegaconf
 from omegaconf import OmegaConf
 
 logger = getLogger(__name__)
@@ -67,4 +68,26 @@ def save_agent_config(checkpoint_dir, agent_cfg):
         config=agent_cfg,
         f=checkpoint_dir + "/agent_config.yaml",
         resolve=True,
+    )
+
+
+def add_omegaconf_to_safe_globals():
+    import typing
+    from collections import defaultdict
+
+    import torch
+
+    torch.serialization.add_safe_globals(
+        [
+            omegaconf.listconfig.ListConfig,
+            omegaconf.dictconfig.DictConfig,
+            omegaconf.base.ContainerMetadata,
+            typing.Any,
+            list,
+            dict,
+            defaultdict,
+            int,
+            omegaconf.nodes.AnyNode,
+            omegaconf.base.Metadata,
+        ]
     )

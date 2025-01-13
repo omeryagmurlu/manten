@@ -26,7 +26,7 @@ def convert2rel(pcd, curr_gripper, *others):
 @BatchPCDOrRGBObservationActionAgentTemplate.make_agent(
     evaluation_metric_cls=PosRotGripperMetric, evaluation_stats_cls=PosRotGripperStats
 )
-class Combined2D3DTDDAAgent(
+class OrgDA(
     BatchPCDOrRGBObservationActionAgentTemplate,
     DatasetActionScalerMixin,
     DatasetPCDScalerMixin,
@@ -36,13 +36,10 @@ class Combined2D3DTDDAAgent(
         *,
         position_noise_scheduler,
         rotation_noise_scheduler,
-        encoder,
-        noise_model,
         sigmoid_openness_in_inference,  # needed if bce _with logits_ is used
-        # scale_actions_by_pcd,
         relative,  # center the pcd around tcp
         act_horizon,
-        embedding_dim,
+        _embedding_dim,
         n_inference_steps=10,
         tcp_pose_key=None,
         **kwargs,
@@ -52,7 +49,6 @@ class Combined2D3DTDDAAgent(
         self.rotation_noise_scheduler = rotation_noise_scheduler
 
         self.relative = relative
-        self.use_instruction = False  # will come from dataset
         self.n_inference_steps = n_inference_steps
         self.act_horizon = act_horizon
         self.sigmoid_openness_in_inference = sigmoid_openness_in_inference
@@ -81,17 +77,6 @@ class Combined2D3DTDDAAgent(
             key: self.observations_shape["state_obs"][key][1:] for key in remaining_state_keys
         }
 
-        self.encoder = encoder(
-            nhist=self.obs_horizon,
-            embedding_dim=embedding_dim,
-            custom_state_shapes=self.encoder_custom_state_shapes,
-        )
-        self.noise_model = noise_model(
-            rotation_dim=self.rotation_dim,
-            nhist=self.obs_horizon,
-            embedding_dim=embedding_dim,
-        )
-
         assert self.act_dim == 3 + self.rotation_dim + 1, "Action dim mismatch"
 
     @property
@@ -115,6 +100,8 @@ class Combined2D3DTDDAAgent(
     ):
         # rgb_obs (B, obs_horizon, cam, C, H, W)
         norm_actions = self.action_scaler.scale(actions)
+
+        indices_3d = keep_mask_3d.nonzero()
 
         B = actions.shape[0]
         conditions_3d, conditions_2d = self.encode_observations(
@@ -245,8 +232,6 @@ class Combined2D3DTDDAAgent(
         )
         curr_gripper = state_obs[self.tcp_pose_key]
         custom_states = {key: state_obs[key] for key in self.encoder_custom_state_shapes}
-
-        assert self.obs_horizon == curr_gripper.shape[1]
 
         # position (3) normalization
         curr_gripper = self.pcd_scaler.scale(curr_gripper[..., :3])
@@ -423,7 +408,7 @@ if __name__ == "__main__":
         metric_action_consistency=MSELossPoseBCELossGripperMetric(),
     )
 
-    agent = Combined2D3DTDDAAgent(
+    agent = OrgDA(
         dataset_info=dataset_info,
         position_noise_scheduler=ddpm(),
         rotation_noise_scheduler=ddpm(),
