@@ -5,6 +5,7 @@ import json
 import logging
 from concurrent.futures import ProcessPoolExecutor
 from functools import partial
+import os
 from pathlib import Path
 from shutil import rmtree
 
@@ -188,7 +189,7 @@ def main():
         type=str,
         required=False,
         help="The path to the file or directory",
-        default="/home/i53/student/yagmurlu/code/manten/data/maniskill2",
+        default=os.getcwd() + "/data/maniskill2",
     )
     parser.add_argument(
         "--n_proc",
@@ -236,7 +237,7 @@ def main():
         type=str,
         required=False,
         help="The simulation backend",
-        default="cpu",
+        default="physx_cpu",
     )
     parser.add_argument(
         "--use_zarr",

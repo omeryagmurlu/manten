@@ -9,8 +9,8 @@ from torch import nn
 from manten.agents.utils.mixins import DatasetActionScalerMixin
 from manten.agents.utils.templates import BatchRGBObservationActionAgentTemplate
 from manten.metrics.traj_action_metric import PosRotGripperMetric, PosRotGripperStats
-from manten.networks.vendor.diffusion_policy.diffusion.conditional_unet1d import (
-    ConditionalUnet1D,
+from manten.networks.vendor.diffusion_policy.diffusion.transformer_for_diffusion import (
+    TransformerForDiffusion,
 )
 from manten.networks.vendor.diffusion_policy.vision.multi_image_obs_encoder import (
     MultiImageObsEncoder,
@@ -25,7 +25,7 @@ def noop_encoder(*_args, **_kwargs):
 @BatchRGBObservationActionAgentTemplate.make_agent(
     evaluation_metric_cls=PosRotGripperMetric, evaluation_stats_cls=PosRotGripperStats
 )
-class DiffusionUnetImagePolicy(
+class DiffusionTransformerImagePolicy(
     BatchRGBObservationActionAgentTemplate, DatasetActionScalerMixin
 ):
     def __init__(
@@ -33,7 +33,7 @@ class DiffusionUnetImagePolicy(
         *,
         rgb_encoder: Callable[..., MultiImageObsEncoder],
         state_encoder: Callable[..., torch.nn.Module] = noop_encoder,
-        pred_net: Callable[..., ConditionalUnet1D],
+        pred_net: Callable[..., TransformerForDiffusion],
         act_horizon,
         noise_scheduler,
         num_diffusion_iters,
@@ -57,7 +57,11 @@ class DiffusionUnetImagePolicy(
         )
 
         self.pred_net = pred_net(
-            input_dim=self.act_dim, global_cond_dim=self.encode_obs_out_dim
+            input_dim=self.act_dim,
+            output_dim=self.act_dim,
+            horizon=self.pred_horizon,
+            n_obs_steps=self.obs_horizon,
+            cond_dim=self.encode_obs_out_dim,
         )
 
     @property
@@ -98,7 +102,7 @@ class DiffusionUnetImagePolicy(
         noisy_action_seq = self.noise_scheduler.add_noise(norm_action_seq, noise, timesteps)
 
         # predict the noise residual
-        pred = self.pred_net(noisy_action_seq, timesteps, global_cond=obs_cond)
+        pred = self.pred_net(noisy_action_seq, timesteps, cond=obs_cond)
 
         pred_type = self.noise_scheduler.config.prediction_type
         if pred_type == "epsilon":
@@ -125,7 +129,7 @@ class DiffusionUnetImagePolicy(
                 pred = self.pred_net(
                     sample=noisy_action_seq,
                     timestep=k,
-                    global_cond=obs_cond,
+                    cond=obs_cond,
                 )
 
                 # inverse diffusion step (remove noise)
@@ -151,14 +155,14 @@ class DiffusionUnetImagePolicy(
 
         rgb_features = self.rgb_encoder(tree_rearrange(rgb_obs, "b t c h w -> (b t) c h w"))
         rgb_cond = einops.rearrange(
-            rgb_features, "(b t) ... -> b (t ...)", b=B, t=self.obs_horizon
+            rgb_features, "(b t) ... -> b t ...", b=B, t=self.obs_horizon
         )
 
         state_features = self.state_encoder(
             optree.tree_map(lambda x: einops.rearrange(x, "b t ... -> (b t) ..."), state_obs)
         )
         state_cond = einops.rearrange(
-            state_features, "(b t) ... -> b (t ...)", b=B, t=self.obs_horizon
+            state_features, "(b t) ... -> b t ...", b=B, t=self.obs_horizon
         )
 
         obs_cond = torch.cat([rgb_cond, state_cond], dim=-1)
@@ -226,7 +230,7 @@ if __name__ == "__main__":
     print(dataset_info)
 
     pred_net = partial(
-        ConditionalUnet1D,
+        TransformerForDiffusion,
         # diffusion_step_embed_dim=256,
         # unet_dims=(256, 512, 1024),
         # n_groups=8,
@@ -234,7 +238,7 @@ if __name__ == "__main__":
         # cond_predict_scale=True,
     )
 
-    agent = DiffusionUnetImagePolicy(
+    agent = DiffusionTransformerImagePolicy(
         metric=metric,
         dataset_info=dataset_info,
         action_scaler=action_scaler,

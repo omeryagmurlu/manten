@@ -180,8 +180,11 @@ class ManiSkillDataset(Dataset):
         L, act_dim = episode["actions"].shape
 
         obs_dict = tree_map(
-            lambda obs: torch.tensor(obs[max(0, start) : start + self.obs_horizon]),
+            lambda obs: obs[max(0, start) : start + self.obs_horizon],
             episode["observations"],
+        )
+        obs_dict = tree_map(
+            lambda x: torch.tensor(x) if x.dtype != 'float64' else torch.tensor(x, dtype=torch.float32), obs_dict
         )
         # start+self.obs_horizon is at least 1
         act_seq = torch.tensor(episode["actions"][max(0, start) : end])
