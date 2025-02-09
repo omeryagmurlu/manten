@@ -23,7 +23,7 @@ training:
 
   # sanity_check: False
   # log_train_timing: True
-  resume_from_save: /home/i53/student/yagmurlu/code/manten/outputs/training/manten_maniskill_PickCube-v1/2025-01-13/02-44-03/accelerate/resume
+  # resume_from_save: /home/i53/student/yagmurlu/code/manten/outputs/training/manten_maniskill_PickCube-v1/2025-01-13/02-44-03/accelerate/resume
 
   # ema: null
 
