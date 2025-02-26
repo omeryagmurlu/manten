@@ -1,3 +1,4 @@
+import gc
 import shutil
 from collections import deque
 from collections.abc import Callable
@@ -117,6 +118,16 @@ class TrainLoops:
         if self.cfg.resume_from_save:
             self.resume_from_save(self.cfg.resume_from_save)
 
+        if hasattr(self.cfg, "custom_eval_only") and self.cfg.custom_eval_only:
+            logger.info("starting custom evaluation only")
+            with torch.no_grad():
+                self.agent.eval()
+                self.custom_evaluation()
+                if self.ema:
+                    self.custom_evaluation(use_ema=True)
+            logger.info("custom evaluation finished, exiting")
+            return
+
         logger.info("starting training")
         to_epoch = self.cfg.num_epochs if self.cfg.num_epochs else float("inf")
         to_global_step = (
@@ -143,16 +154,24 @@ class TrainLoops:
     @torch.inference_mode()
     def trigger_validation(self, **kwa):
         if self.every_n_after_train(self.cfg.val):
+            self.free_memory()
             self.validation_loop(**kwa)
+            self.free_memory()
 
         if self.every_n_after_train(self.cfg.eval_train):
+            self.free_memory()
             self.evaluation_loop(self.train_dl, self.cfg.eval_train.max_steps, "train", **kwa)
+            self.free_memory()
 
         if self.every_n_after_train(self.cfg.eval_test):
+            self.free_memory()
             self.evaluation_loop(self.test_dl, self.cfg.eval_test.max_steps, "test", **kwa)
+            self.free_memory()
 
         if self.every_n_after_train(self.cfg.custom_eval):
+            self.free_memory()
             self.custom_evaluation(**kwa)
+            self.free_memory()
 
     def begin_sanity_check(self):
         if bool(self.cfg.sanity_check):
@@ -288,8 +307,6 @@ class TrainLoops:
         ):
             return
 
-        self.free_memory()
-        self.accelerator.wait_for_everyone()
         if self.accelerator.is_main_process:
             custom_evaluators = (
                 self.custom_evaluator
@@ -325,9 +342,6 @@ class TrainLoops:
 
                 self.accelerator.log(custom_eval_logs, step=self.state.global_step)
                 print(tabulate(custom_eval_logs.items()))
-
-        self.free_memory()
-        self.accelerator.wait_for_everyone()
 
     def sanity_check_loop(self):
         self.agent.eval()
@@ -508,12 +522,11 @@ class TrainLoops:
             or (curr_train_step + 1) == self.len_train_loop  # or end of epoch
         )
 
-    @staticmethod
-    def free_memory():
-        import gc
-
+    def free_memory(self):
+        self.accelerator.wait_for_everyone()
         gc.collect()
         torch.cuda.empty_cache()
         gc.collect()
         torch.cuda.empty_cache()
         gc.collect()
+        self.accelerator.wait_for_everyone()

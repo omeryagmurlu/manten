@@ -41,7 +41,6 @@ datamodule:
   _task: ${task_spec.env_id}
   _state_modality_keys: ${task_spec.state_modality_keys}
   _rgb_modality_keys: ${task_spec.rgb_modality_keys}
-  _pack_root: /home/i53/student/yagmurlu/code/manten/data/maniskill2/packed_demos
   _obs_horizon: 2
   _pred_horizon: 16
   _obs_mode: rgb

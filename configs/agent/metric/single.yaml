@@ -1,0 +1,4 @@
+_target_: manten.metrics.mse_loss_pose_bce_loss_gripper_metric.MSELossPoseBCEWithLogitsLossGripperMetric
+pos_weight: 10.0
+rot_weight: 5.0
+gripper_weight: 1.0

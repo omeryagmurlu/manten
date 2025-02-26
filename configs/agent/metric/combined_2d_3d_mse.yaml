@@ -1,0 +1,9 @@
+defaults:
+  - ../metric@metric_action_2d: mse_loss
+  - ../metric@metric_action_3d: mse_loss
+  - ../metric@metric_action_consistency: mse_loss
+
+_target_: manten.metrics.combined_2d_3d_metric.Combined2D3DMetric
+weight_action_2d: 1.0
+weight_action_3d: 1.0
+weight_action_consistency: 1.0

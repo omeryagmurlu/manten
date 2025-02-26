@@ -29,8 +29,8 @@ class BaseAgent(ModuleAttrMixin, nn.Module, ABC):
             Default implementation calls train_step without gradients
     """
 
-    def __init__(self, metric: BaseMetric, dataset_info: Any = None):
-        super().__init__()
+    def __init__(self, metric: BaseMetric, dataset_info: Any = None, **kwargs):
+        super().__init__(**kwargs)
         self.metric = metric
         self.dataset_info = to_object_graceful(dataset_info)
 

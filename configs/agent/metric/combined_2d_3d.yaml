@@ -1,17 +1,21 @@
+defaults:
+  - ../metric@metric_action_2d: single
+  - ../metric@metric_action_3d: single
+
 _target_: manten.metrics.combined_2d_3d_metric.Combined2D3DMetric
-weight_action_2d: 2.0
-weight_action_3d: 2.0
+weight_action_2d: 1.0
+weight_action_3d: 1.0
 weight_action_consistency: 1.0
-metric_action_2d:
-  _target_: manten.metrics.mse_loss_pose_bce_loss_gripper_metric.MSELossPoseBCEWithLogitsLossGripperMetric
-  pos_weight: 10.0
-  rot_weight: 5.0
-  gripper_weight: 1.0
-metric_action_3d:
-  _target_: manten.metrics.mse_loss_pose_bce_loss_gripper_metric.MSELossPoseBCEWithLogitsLossGripperMetric
-  pos_weight: 10.0
-  rot_weight: 5.0
-  gripper_weight: 1.0
+# metric_action_2d:
+#   _target_: manten.metrics.mse_loss_pose_bce_loss_gripper_metric.MSELossPoseBCEWithLogitsLossGripperMetric
+#   pos_weight: 10.0
+#   rot_weight: 5.0
+#   gripper_weight: 1.0
+# metric_action_3d:
+#   _target_: manten.metrics.mse_loss_pose_bce_loss_gripper_metric.MSELossPoseBCEWithLogitsLossGripperMetric
+#   pos_weight: 10.0
+#   rot_weight: 5.0
+#   gripper_weight: 1.0
 metric_action_consistency:
   _target_: manten.metrics.mse_loss_pose_bce_loss_gripper_metric.MSELossPoseBCEWithLogitsLossGripperSymmetricMetric
   pos_weight: 10.0

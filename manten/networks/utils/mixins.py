@@ -1,10 +1,13 @@
+import torch
 from torch import nn
 
 
 class ModuleAttrMixin(nn.Module):
-    def __init__(self):
+    def __init__(self, device="cuda"):
         super().__init__()
-        self.__dummy_variable = nn.Parameter(requires_grad=False)
+        self.__dummy_variable = nn.Parameter(
+            requires_grad=False, data=torch.tensor(0.0, device=device)
+        )
 
     @property
     def device(self):

@@ -46,23 +46,28 @@ class Combined2D3DMetric(
     def feed(self, ground, prediction):
         super().feed(ground, prediction)
 
-        self.metric_action_2d.feed(self.ground["2d"], self.prediction["2d"])
-        self.metric_action_3d.feed(self.ground["3d"], self.prediction["3d"])
-
-        self.metric_action_consistency.feed(
-            self.prediction["2d_for_3d"], self.prediction["3d"]
-        )
+        if "2d" in self.ground:
+            self.metric_action_2d.feed(self.ground["2d"], self.prediction["2d"])
+        if "3d" in self.ground:
+            self.metric_action_3d.feed(self.ground["3d"], self.prediction["3d"])
+        if "2d_for_3d" in self.prediction:
+            self.metric_action_consistency.feed(
+                self.prediction["2d_for_3d"], self.prediction["3d"]
+            )
 
     def loss(self):
         # only action loss for now
         return self.action_loss()
 
     def action_loss(self):
-        return (
-            self.weight_action_2d * self.action_2d_loss()
-            + self.weight_action_3d * self.action_3d_loss()
-            + self.weight_action_consistency * self.action_consistency_loss()
-        )
+        res = 0
+        if "2d" in self.ground:
+            res += self.weight_action_2d * self.action_2d_loss()
+        if "3d" in self.ground:
+            res += self.weight_action_3d * self.action_3d_loss()
+        if "2d_for_3d" in self.prediction:
+            res += self.weight_action_consistency * self.action_consistency_loss()
+        return res
 
     def action_2d_loss(self):
         return self.metric_action_2d.loss()
@@ -75,13 +80,19 @@ class Combined2D3DMetric(
 
     @with_tree_map(lambda x: x.detach().cpu().numpy())
     def metrics(self):
-        return {
+        res = {
             "loss": self.loss(),
             "action_loss": self.action_loss(),
-            "action_2d_loss": self.action_2d_loss(),
-            "action_3d_loss": self.action_3d_loss(),
-            "action_consistency_loss": self.action_consistency_loss(),
-            "3d_available_ratio": torch.tensor(
-                len(self.ground["3d"]) / len(self.ground["2d"])
-            ),
         }
+        if "2d" in self.ground:
+            res["action_2d_loss"] = self.action_2d_loss()
+            res["3d_available_ratio"] = torch.tensor(0.0)
+        if "3d" in self.ground:
+            res["action_3d_loss"] = self.action_3d_loss()
+            res["3d_available_ratio"] = torch.tensor(1.0)
+        if "2d_for_3d" in self.prediction:
+            res["action_consistency_loss"] = self.action_consistency_loss()
+            res["3d_available_ratio"] = torch.tensor(
+                len(self.ground["3d"]) / len(self.ground["2d"])
+            )
+        return res
