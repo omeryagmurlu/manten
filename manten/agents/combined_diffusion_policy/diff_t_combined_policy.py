@@ -65,7 +65,10 @@ class DiffusionTransformerCombinedPolicy(
             ),
         )
 
-        self.pcd_encoder = pcd_encoder
+        if "3d" not in self.train_modes:
+            self.pcd_encoder = None
+        else:
+            self.pcd_encoder = pcd_encoder
 
         self.pred_net = pred_net(
             input_dim=self.act_dim,
@@ -117,7 +120,7 @@ class DiffusionTransformerCombinedPolicy(
         # predict the noise residual
         prediction_by_vis_mode = {}
         for mode in self.train_modes:
-            cond = obs_cond if mode == "2d" else obs_cond_2d
+            cond = obs_cond if mode == "3d" else obs_cond_2d
             prediction_by_vis_mode[mode] = self.pred_net(
                 noisy_action_seq.clone(), timesteps.clone(), cond=cond
             )
@@ -197,19 +200,24 @@ class DiffusionTransformerCombinedPolicy(
             rgb_features, "(b t) ... -> b t ...", b=B, t=self.obs_horizon
         )
 
+        state_features = self.state_encoder(
+            optree.tree_map(lambda x: einops.rearrange(x, "b t ... -> (b t) ..."), state_obs)
+        )
+        state_cond = einops.rearrange(
+            state_features, "(b t) ... -> b t ...", b=B, t=self.obs_horizon
+        )
+
+        if self.pcd_encoder is None:
+            obs_cond_2d = torch.cat([rgb_cond, state_cond], dim=-1)
+            obs_cond = obs_cond_2d
+            return obs_cond, obs_cond_2d
+
         pcd_features = self.pcd_encoder(
             tree_rearrange(pcd_obs, "b t c h w -> (b t) c h w"),
             tree_rearrange(pcd_mask, "b t c h w -> (b t) c h w"),
         )
         pcd_cond = einops.rearrange(
             pcd_features, "(b t) ... -> b t ...", b=B, t=self.obs_horizon
-        )
-
-        state_features = self.state_encoder(
-            optree.tree_map(lambda x: einops.rearrange(x, "b t ... -> (b t) ..."), state_obs)
-        )
-        state_cond = einops.rearrange(
-            state_features, "(b t) ... -> b t ...", b=B, t=self.obs_horizon
         )
 
         obs_cond = torch.cat([rgb_cond, pcd_cond, state_cond], dim=-1)

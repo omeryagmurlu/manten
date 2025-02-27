@@ -112,6 +112,9 @@ def setup(cfg):  # noqa: PLR0915
         init_dict["init_kwargs"]["wandb"]["config"] = OmegaConf.to_container(
             cfg, resolve=True
         )
+        if "tags" in init_dict["init_kwargs"]["wandb"]:  # noqa: SIM102
+            if hasattr(cfg.training, "custom_eval_only") and cfg.training.custom_eval_only:
+                init_dict["init_kwargs"]["wandb"]["tags"].insert(0, "custom_eval_only")
     accelerator.init_trackers(**init_dict)
 
     loops.begin_training()
