@@ -21,7 +21,7 @@ training:
     every_n_global_steps: 120000
     skip_first_global_steps: 0
 
-  # resume_from_save: /home/reuss/manten/outputs/training/manten_maniskill_PickCube-v1/2025-02-25/17-37-27/accelerate/resume
+  # resume_from_save: /home/reuss/manten/outputs/training/manten_maniskill_PickCube-v1/2025-02-26/23-42-37/accelerate/resume
   # custom_eval_only: True
 
 accelerator_init_trackers:
@@ -32,6 +32,10 @@ accelerator_init_trackers:
 agent:
   agent:
     train_modes: [2d]
+    state_encoder:
+      _target_: manten.agents.combined_diffusion_policy.diff_t_combined_policy.cat_all_encoder
+      _partial_: True
+      excluded_keys: ['tcp_pose']
 
 
 _lr: 1.0e-4
