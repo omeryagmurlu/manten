@@ -49,8 +49,8 @@ class OpenPointsModel(nn.Module):
             lambda x: einops.rearrange(x, "b c h w -> b (h w) c"), pcd_mask
         )
 
-        # handle mask for now by setting all pos to 0
-        pcd_obs = optree.tree_map(lambda x, mask: x * mask, pcd_obs, pcd_mask)
+        # # handle mask for now by setting all pos to 0
+        # pcd_obs = optree.tree_map(lambda x, mask: x * mask, pcd_obs, pcd_mask)
 
         pcd = torch.cat([*pcd_obs.values()], dim=-1).contiguous()
 
