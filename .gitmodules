@@ -1,0 +1,3 @@
+[submodule "vendor/PointNeXt"]
+	path = vendor/PointNeXt
+	url = https://github.com/omeryagmurlu/PointNeXt
