@@ -152,7 +152,7 @@ cython_debug/
 !.vscode/launch.json
 !.vscode/extensions.json
 *.code-workspace
-**/.vscode
+# **/.vscode
 
 # Lightning-Hydra-Template
 /configs/local/local.yaml
