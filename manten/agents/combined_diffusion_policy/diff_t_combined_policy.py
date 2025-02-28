@@ -70,10 +70,11 @@ class DiffusionTransformerCombinedPolicy(
             ),
         )
 
-        if "3d" not in self.train_modes:
-            self.pcd_encoder = None
-        else:
-            self.pcd_encoder = pcd_encoder
+        # if "3d" not in self.train_modes:
+        #     self.pcd_encoder = None
+        # else:
+        #     self.pcd_encoder = pcd_encoder
+        self.pcd_encoder = pcd_encoder
 
         self.pred_net = pred_net(
             input_dim=self.act_dim,
@@ -212,10 +213,10 @@ class DiffusionTransformerCombinedPolicy(
             state_features, "(b t) ... -> b t ...", b=B, t=self.obs_horizon
         )
 
-        if self.pcd_encoder is None:
-            obs_cond_2d = torch.cat([rgb_cond, state_cond], dim=-1)
-            obs_cond = obs_cond_2d
-            return obs_cond, obs_cond_2d
+        # if self.pcd_encoder is None:
+        #     obs_cond_2d = torch.cat([rgb_cond, state_cond], dim=-1)
+        #     obs_cond = obs_cond_2d
+        #     return obs_cond, obs_cond_2d
 
         pcd_features = self.pcd_encoder(
             tree_rearrange(pcd_obs, "b t c h w -> (b t) c h w"),
@@ -226,9 +227,10 @@ class DiffusionTransformerCombinedPolicy(
         )
 
         obs_cond = torch.cat([rgb_cond, pcd_cond, state_cond], dim=-1)
-        obs_cond_2d = torch.cat([rgb_cond, torch.zeros_like(pcd_cond), state_cond], dim=-1)
+        # obs_cond_2d = torch.cat([rgb_cond, torch.zeros_like(pcd_cond), state_cond], dim=-1)
+        obs_cond_2d = obs_cond
 
-        return obs_cond, obs_cond_2d
+        return obs_cond, obs_cond
 
     @property
     def encode_obs_out_dim(self):

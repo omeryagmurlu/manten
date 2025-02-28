@@ -65,7 +65,11 @@ def setup(cfg):  # noqa: PLR0915
         cfg.optimizer, optimizer_configurator.get_grouped_params()
     )
 
-    # TODO: accelerate doesn't scale lr: https://huggingface.co/docs/accelerate/en/concept_guides/performance#learning-rates
+    # accelerate doesn't scale lr: https://huggingface.co/docs/accelerate/en/concept_guides/performance#learning-rates
+    if hasattr(cfg.lr_scheduler, "num_warmup_steps") and cfg.lr_scheduler.num_warmup_steps is not None:
+        cfg.lr_scheduler.num_warmup_steps = cfg.lr_scheduler.num_warmup_steps * accelerator.num_processes
+    if hasattr(cfg.lr_scheduler, "num_training_steps") and cfg.lr_scheduler.num_training_steps is not None:
+        cfg.lr_scheduler.num_training_steps = cfg.lr_scheduler.num_training_steps * accelerator.num_processes
     lr_scheduler = hydra.utils.instantiate(cfg.lr_scheduler, optimizer=optimizer)
 
     (agent, optimizer, train_dataloader, test_dataloader, lr_scheduler) = accelerator.prepare(
