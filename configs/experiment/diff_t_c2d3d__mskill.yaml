@@ -11,7 +11,7 @@ _save_every_n_gs: 10000
 _detailed_metrics_every_n_gs: 10000
 _skip_first_n_gs: 0
 training:
-  num_global_steps: 10000
+  num_global_steps: 120000
   vis_metric_key: "pos_l2"
   eval_train:
     max_steps: 6
@@ -21,22 +21,22 @@ training:
     every_n_global_steps: 100000000
     skip_first_global_steps: 0
 
-  resume_from_save: /home/reuss/manten/outputs/training/manten_maniskill_PickCube-v1/2025-02-28/13-42-30/accelerate/resume
-  custom_eval_only: True
+  # resume_from_save: /home/reuss/manten/outputs/training/manten_maniskill_PickCube-v1/2025-02-28/15-09-49/accelerate/resume
+  # custom_eval_only: True
 
 accelerator_init_trackers:
   init_kwargs:
     wandb:
-      tags: [pick_cube_v1, diff_t_c2d3d, train_3d_only] # train_2d_only, train_3d_only, train_2d_and_3d
+      tags: [diff_t_c2d3d, train_2d_only] # train_2d_only, train_3d_only, train_2d_and_3d
 
 agent:
   agent:
-    train_modes: [3d]
+    no_color_3d: True
+    train_modes: [2d]
     state_encoder:
       _target_: manten.agents.combined_diffusion_policy.diff_t_combined_policy.cat_all_encoder
       _partial_: True
-      excluded_keys: ['tcp_pose']
-
+      excluded_keys: ["tcp_pose"]
 
 _lr: 1.0e-4
 _weight_decay: 1.0e-6

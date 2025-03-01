@@ -1,11 +1,10 @@
 import einops
 import optree
+import torch
 from omegaconf import DictConfig, ListConfig, OmegaConf
 from openpoints.models.build import build_model_from_cfg
 from openpoints.utils.config import EasyConfig
-
-import torch
-import torch.nn as nn
+from torch import nn
 
 # def create_openpoints_model(**kwargs):
 #     kwargs = optree.tree_map(
@@ -21,20 +20,9 @@ import torch.nn as nn
 
 
 class OpenPointsModel(nn.Module):
-    def __init__(self, **kwargs):
+    def __init__(self, model):
         super().__init__()
-
-        kwargs = optree.tree_map(
-            lambda x: OmegaConf.to_object(x)
-            if isinstance(x, (DictConfig, ListConfig))
-            else x,
-            kwargs,
-        )
-
-        cfg = EasyConfig()
-        cfg.update(kwargs)
-
-        self.model = build_model_from_cfg(cfg)
+        self.model = model
 
     def forward(self, pcd_obs, pcd_mask):
         # pcd_obs['camera1'].shape

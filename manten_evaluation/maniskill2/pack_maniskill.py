@@ -3,9 +3,9 @@
 import argparse
 import json
 import logging
+import os
 from concurrent.futures import ProcessPoolExecutor
 from functools import partial
-import os
 from pathlib import Path
 from shutil import rmtree
 

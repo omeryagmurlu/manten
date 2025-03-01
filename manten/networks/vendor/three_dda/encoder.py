@@ -14,7 +14,6 @@ from .custom_feature_pyramid_network import (
 )
 from .layers import (
     FFWRelativeCrossAttentionModule,
-    ParallelAttention,
 )
 from .position_encodings import RotaryPositionEncoding2D, RotaryPositionEncoding3D
 from .resnet import load_resnet18, load_resnet50

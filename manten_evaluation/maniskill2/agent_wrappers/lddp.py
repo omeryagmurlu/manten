@@ -134,7 +134,7 @@ class LDDPAgentWrapper:
             actions = self.__agent.predict_actions(
                 observations=self.__obs_dict(obs), meta=self.__meta
             )
-        
+
         actions = self.__proc_actions(actions)
         return actions
 

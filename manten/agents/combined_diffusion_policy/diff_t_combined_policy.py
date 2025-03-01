@@ -25,10 +25,9 @@ def noop_encoder(x, **_kwargs):
 # def cat_all_encoder(x, **_kwargs):
 #     return torch.cat(list(x.values()), dim=-1)
 
+
 def cat_all_encoder(x, excluded_keys=(), **_kwargs):
-    return torch.cat(
-        [x[key] for key in x if key not in excluded_keys], dim=-1
-    )
+    return torch.cat([x[key] for key in x if key not in excluded_keys], dim=-1)
 
 
 @BatchPCDOrRGBObservationActionAgentTemplate.make_agent(
@@ -50,19 +49,19 @@ class DiffusionTransformerCombinedPolicy(
         noise_scheduler,
         num_diffusion_iters,
         train_modes=("2d", "3d"),
+        no_color_3d=False,
         **kwargs,
     ):
         super().__init__(**kwargs)
         assert self.actions_shape[-2] == self.pred_horizon
 
         self.act_horizon = act_horizon
-        self.train_modes = train_modes
         self.num_diffusion_iters = num_diffusion_iters
 
+        self.train_modes = train_modes
+        self.no_color_3d = no_color_3d
+
         self.noise_scheduler = noise_scheduler
-        self.rgb_encoder = rgb_encoder(
-            rgb_shape=optree.tree_map(lambda x: x[1:], self.observations_shape["rgb_obs"])
-        )
         self.state_encoder = partial(
             state_encoder,
             state_shape=optree.tree_map(
@@ -70,11 +69,17 @@ class DiffusionTransformerCombinedPolicy(
             ),
         )
 
-        # if "3d" not in self.train_modes:
-        #     self.pcd_encoder = None
-        # else:
-        #     self.pcd_encoder = pcd_encoder
-        self.pcd_encoder = pcd_encoder
+        if "3d" not in self.train_modes:
+            self.pcd_encoder = None
+        else:
+            self.pcd_encoder = pcd_encoder
+
+        if no_color_3d and "2d" not in self.train_modes:
+            self.rgb_encoder = None
+        else:
+            self.rgb_encoder = rgb_encoder(
+                rgb_shape=optree.tree_map(lambda x: x[1:], self.observations_shape["rgb_obs"])
+            )
 
         self.pred_net = pred_net(
             input_dim=self.act_dim,
@@ -105,18 +110,18 @@ class DiffusionTransformerCombinedPolicy(
         norm_action_seq = self.action_scaler.scale(actions)
 
         B = actions.shape[0]
-        obs_cond, obs_cond_2d = self.encode_obs(pcd_obs, rgb_obs, pcd_mask, state_obs)
+        obs_cond_3d, obs_cond_2d = self.encode_obs(pcd_obs, rgb_obs, pcd_mask, state_obs)
 
         # sample noise to add to actions
         # only act_dim, no observation inpainting, tho maybe later joint acts?
-        noise = torch.randn((B, self.pred_horizon, self.act_dim), device=obs_cond.device)
+        noise = torch.randn((B, self.pred_horizon, self.act_dim), device=obs_cond_3d.device)
 
         # sample a diffusion iteration for each data point
         timesteps = torch.randint(
             0,
             self.noise_scheduler.config.num_train_timesteps,
             (B,),
-            device=obs_cond.device,
+            device=obs_cond_3d.device,
         ).long()
 
         # add noise to the clean images(actions) according to the noise magnitude at each diffusion iteration
@@ -126,10 +131,20 @@ class DiffusionTransformerCombinedPolicy(
         # predict the noise residual
         prediction_by_vis_mode = {}
         for mode in self.train_modes:
-            cond = obs_cond if mode == "3d" else obs_cond_2d
-            prediction_by_vis_mode[mode] = self.pred_net(
-                noisy_action_seq.clone(), timesteps.clone(), cond=cond
-            )
+            cond = obs_cond_3d if mode == "3d" else obs_cond_2d
+            if mode == "2d":
+                prediction_by_vis_mode[mode] = self.pred_net(
+                    noisy_action_seq.clone(), timesteps.clone(), cond=cond
+                )
+            elif mode == "3d":
+                n_3d_samples = noisy_action_seq.clone()[keep_mask_3d]
+                t_3d_samples = timesteps.clone()[keep_mask_3d]
+                c_3d_samples = cond[keep_mask_3d]
+                prediction_by_vis_mode[mode] = self.pred_net(
+                    n_3d_samples, t_3d_samples, cond=c_3d_samples
+                )
+            else:
+                raise ValueError(f"Unsupported train mode {mode}")
 
         pred_type = self.noise_scheduler.config.prediction_type
         if pred_type == "epsilon":
@@ -139,18 +154,17 @@ class DiffusionTransformerCombinedPolicy(
         else:
             raise ValueError(f"Unsupported prediction type {pred_type}")
 
-        indices_3d = keep_mask_3d.nonzero()
-        # an optimization would be moving this to the top, but eh
         gt_modes = {}
         pred_modes = {}
         if "2d" in self.train_modes:
             gt_modes["2d"] = ret_gt
             pred_modes["2d"] = prediction_by_vis_mode["2d"]
         if "3d" in self.train_modes:
-            gt_modes["3d"] = ret_gt[indices_3d]
-            pred_modes["3d"] = prediction_by_vis_mode["3d"][indices_3d]
+            gt_modes["3d"] = ret_gt[keep_mask_3d]
+            pred_modes["3d"] = prediction_by_vis_mode["3d"]
         if "2d" in self.train_modes and "3d" in self.train_modes:
-            pred_modes["2d_for_3d"] = prediction_by_vis_mode["2d"][indices_3d]
+            # assumption: each 3d data has 2d, but not vice versa
+            pred_modes["2d_for_3d"] = prediction_by_vis_mode["2d"][keep_mask_3d]
 
         return gt_modes, pred_modes
 
@@ -158,12 +172,8 @@ class DiffusionTransformerCombinedPolicy(
         self.noise_scheduler.set_timesteps(self.num_diffusion_iters)
 
         with torch.no_grad():
-            obs_cond, obs_cond_2d = self.encode_obs(pcd_obs, rgb_obs, pcd_mask, state_obs)
-            cond = torch.where(
-                ~keep_mask_3d.view(keep_mask_3d.shape[0], *get_ones_shape_like(obs_cond)[1:]),
-                obs_cond_2d,
-                obs_cond,
-            )
+            obs_cond_3d, obs_cond_2d = self.encode_obs(pcd_obs, rgb_obs, pcd_mask, state_obs)
+            cond = self.get_combined_cond(obs_cond_3d, obs_cond_2d, keep_mask_3d)
 
             B = cond.shape[0]
 
@@ -194,17 +204,35 @@ class DiffusionTransformerCombinedPolicy(
         end = start + self.act_horizon
         return noisy_action_seq[:, start:end]  # (B, act_horizon, act_dim)
 
+    def get_combined_cond(self, obs_cond_3d, obs_cond_2d, keep_mask_3d):
+        if "2d" not in self.train_modes:
+            assert "3d" in self.train_modes, "At least one of 2d or 3d must be in train_modes"
+            assert obs_cond_3d.shape[-1] == self.encode_obs_out_dim
+            return obs_cond_3d
+        if "3d" not in self.train_modes:
+            assert "2d" in self.train_modes, "At least one of 2d or 3d must be in train_modes"
+            assert obs_cond_2d.shape[-1] == self.encode_obs_out_dim
+            return obs_cond_2d
+
+        assert obs_cond_3d.shape[-1] == obs_cond_2d.shape[-1] == self.encode_obs_out_dim, (
+            "Both 2d and 3d conditions must have the same output dim"
+        )
+
+        return torch.where(
+            ~keep_mask_3d.view(
+                keep_mask_3d.shape[0],
+                *get_ones_shape_like(obs_cond_3d)[1:],
+            ),
+            obs_cond_2d,
+            obs_cond_3d,
+        )
+
     def adapt_actions_from_ds_actions(self, actions):
         return actions[..., : self.act_horizon, :]
 
     def encode_obs(self, pcd_obs, rgb_obs, pcd_mask, state_obs):
         # rgb_obs is a dict of key(cam_name): (B, obs_horizon, C, H, W)
         B = next(iter(rgb_obs.values())).shape[0]
-
-        rgb_features = self.rgb_encoder(tree_rearrange(rgb_obs, "b t c h w -> (b t) c h w"))
-        rgb_cond = einops.rearrange(
-            rgb_features, "(b t) ... -> b t ...", b=B, t=self.obs_horizon
-        )
 
         state_features = self.state_encoder(
             optree.tree_map(lambda x: einops.rearrange(x, "b t ... -> (b t) ..."), state_obs)
@@ -213,41 +241,60 @@ class DiffusionTransformerCombinedPolicy(
             state_features, "(b t) ... -> b t ...", b=B, t=self.obs_horizon
         )
 
-        # if self.pcd_encoder is None:
-        #     obs_cond_2d = torch.cat([rgb_cond, state_cond], dim=-1)
-        #     obs_cond = obs_cond_2d
-        #     return obs_cond, obs_cond_2d
+        if self.rgb_encoder is not None:
+            rgb_features = self.rgb_encoder(
+                tree_rearrange(rgb_obs, "b t c h w -> (b t) c h w")
+            )
+            rgb_cond = einops.rearrange(
+                rgb_features, "(b t) ... -> b t ...", b=B, t=self.obs_horizon
+            )
+        else:
+            rgb_cond = torch.tensor([], device=self.device, dtype=self.dtype)
 
-        pcd_features = self.pcd_encoder(
-            tree_rearrange(pcd_obs, "b t c h w -> (b t) c h w"),
-            tree_rearrange(pcd_mask, "b t c h w -> (b t) c h w"),
-        )
-        pcd_cond = einops.rearrange(
-            pcd_features, "(b t) ... -> b t ...", b=B, t=self.obs_horizon
-        )
+        if self.pcd_encoder is not None:
+            pcd_features = self.pcd_encoder(
+                tree_rearrange(pcd_obs, "b t c h w -> (b t) c h w"),
+                tree_rearrange(pcd_mask, "b t c h w -> (b t) c h w"),
+            )
+            pcd_cond = einops.rearrange(
+                pcd_features, "(b t) ... -> b t ...", b=B, t=self.obs_horizon
+            )
+        else:
+            pcd_cond = torch.tensor([], device=self.device, dtype=self.dtype)
 
-        obs_cond = torch.cat([rgb_cond, pcd_cond, state_cond], dim=-1)
-        # obs_cond_2d = torch.cat([rgb_cond, torch.zeros_like(pcd_cond), state_cond], dim=-1)
-        obs_cond_2d = obs_cond
-
-        return obs_cond, obs_cond
+        if self.no_color_3d:
+            obs_cond_3d = torch.cat([state_cond, pcd_cond], dim=-1)
+            obs_cond_2d = torch.cat([state_cond, rgb_cond], dim=-1)
+        else:
+            obs_cond_3d = torch.cat([state_cond, rgb_cond, pcd_cond], dim=-1)
+            obs_cond_2d = torch.cat(
+                [state_cond, rgb_cond, torch.zeros_like(pcd_cond)], dim=-1
+            )
+        return obs_cond_3d, obs_cond_2d
 
     @property
     def encode_obs_out_dim(self):
+        if hasattr(self, "_encode_obs_out_dim_cached"):
+            return self._encode_obs_out_dim_cached
+
         self.to(self.device)
         with torch.no_grad():
             sample_observation = optree.tree_map(
                 lambda x: torch.zeros((1, *x), device=self.device), self.observations_shape
             )
 
-            sample_obs_cond, _ = self.encode_obs(
+            o3, o2 = self.encode_obs(
                 sample_observation["pcd_obs"],
                 sample_observation["rgb_obs"],
                 sample_observation["pcd_mask"],
                 sample_observation["state_obs"],
             )
 
-        return sample_obs_cond.shape[-1]
+        # return the max of the two, since for ablations we sometimes only run 2d or 3d
+        # and we want to be able to use the same model but with empty encoders. they should
+        # not be used in the forward pass (see the for loop in compute_train_gt_and_pred)
+        self._encode_obs_out_dim_cached = max(o3.shape[-1], o2.shape[-1])
+        return self.encode_obs_out_dim
 
 
 if __name__ == "__main__":
