@@ -444,7 +444,8 @@ class TrainLoops:
         best_checkpoint_path = f"{self.accelerator.project_dir}/best_checkpoint"
 
         # save resume
-        shutil.rmtree(resume_path, ignore_errors=True)
+        if self.accelerator.is_main_process:
+            shutil.rmtree(resume_path, ignore_errors=True)
         logger.info("resume states @epoch:%d saving to %s", self.state.epoch, resume_path)
         self.accelerator.save_state(resume_path)
 
@@ -476,6 +477,10 @@ class TrainLoops:
                     self.state.best_mean_train_epoch_loss,
                     best_checkpoint_path,
                 )
+
+            last_path = Path(self.accelerator.project_dir).parent.parent.parent / "last_training"
+            last_path.unlink(missing_ok=True)
+            last_path.symlink_to(Path(self.accelerator.project_dir).parent)
 
     def every_n_after_train(self, every_n_conf: EveryNConfig):
         if not every_n_conf:
