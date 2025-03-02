@@ -41,3 +41,7 @@ dependencies:
       - flash-attn
 
       - zarr
+
+      # manten
+      - timm
+      - x_transformers
