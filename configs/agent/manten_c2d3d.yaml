@@ -37,7 +37,7 @@ agent:
         _partial_: True
     depth: 6
     heads: 8
-    layer_dropout: 0.1
+    # layer_dropout: 0.1 # causes problems with torch distributed
     attn_dropout: 0.1
     ff_dropout: 0.1
     attn_flash: True
