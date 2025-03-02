@@ -7,7 +7,7 @@ datamodule:
   _load_count: 25
 
 training:
-  num_epochs: 3
+  num_epochs: 2
   num_global_steps: .inf
   max_steps: 5
   sanity_check: 2
@@ -25,10 +25,10 @@ training:
     skip_first_epochs: 0
     max_steps: 2
   custom_eval:
-    every_n_epochs: 3
+    every_n_epochs: 2
     skip_first_epochs: 0
   save:
-    every_n_epochs: 3
+    every_n_epochs: 2
     skip_first_epochs: 0
 
   log_every_n_steps: 1

@@ -306,8 +306,16 @@ class BatchPCDOrRGBObservationActionAgentTemplate(AgentActionTemplateMixins, ABC
                 rgb_obs = observations["rgb_obs"]
                 pcd_mask = observations["pcd_mask"]
                 state_obs = observations["state_obs"]
+
+                B = next(iter(rgb_obs.values())).shape[0]
+
                 return super().compute_train_gt_and_pred(
-                    pcd_obs, rgb_obs, pcd_mask, state_obs, actions, meta["3d_mask"].view(-1)
+                    pcd_obs,
+                    rgb_obs,
+                    pcd_mask,
+                    state_obs,
+                    actions,
+                    meta["3d_mask"].view(-1).expand(B),
                 )
 
             def predict_actions(self, observations, meta):
@@ -320,8 +328,11 @@ class BatchPCDOrRGBObservationActionAgentTemplate(AgentActionTemplateMixins, ABC
                 rgb_obs = observations["rgb_obs"]
                 pcd_mask = observations["pcd_mask"]
                 state_obs = observations["state_obs"]
+
+                B = next(iter(rgb_obs.values())).shape[0]
+
                 return super().predict_actions(
-                    pcd_obs, rgb_obs, pcd_mask, state_obs, meta["3d_mask"].view(-1)
+                    pcd_obs, rgb_obs, pcd_mask, state_obs, meta["3d_mask"].view(-1).expand(B)
                 )
 
             def __mask_observations_by_vision_modality(self, observations, keep_mask_3d):

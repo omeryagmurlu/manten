@@ -1,14 +1,7 @@
 from collections import defaultdict
 
-import gymnasium as gym
-import mani_skill.envs  # noqa: F401 # register envs
 import numpy as np
-from mani_skill.utils import gym_utils
-from mani_skill.utils.wrappers import CPUGymWrapper, RecordEpisode
-from mani_skill.vector.wrappers.gymnasium import ManiSkillVectorEnv
 from tqdm import tqdm
-
-from manten_evaluation.maniskill2.lib.utils_wrappers import ActionExecutor
 
 
 def make_eval_envs(  # noqa: C901
@@ -19,7 +12,7 @@ def make_eval_envs(  # noqa: C901
     env_kwargs: dict,
     video_dir: str | None = None,
     save_video: bool = False,
-    wrappers: list[gym.Wrapper] | None = None,
+    wrappers: list | None = None,
 ):
     """Create vectorized environment for evaluation and/or recording videos.
     For CPU vectorized environments only the first parallel environment is used to record videos.
@@ -33,6 +26,12 @@ def make_eval_envs(  # noqa: C901
         video_dir: the directory to save the videos. If None no videos are recorded.
         wrappers: the list of wrappers to apply to the environment.
     """
+    import gymnasium as gym
+    import mani_skill.envs  # noqa: F401 # register envs
+    from mani_skill.utils import gym_utils
+    from mani_skill.utils.wrappers import CPUGymWrapper, RecordEpisode
+    from mani_skill.vector.wrappers.gymnasium import ManiSkillVectorEnv
+
     if wrappers is None:
         wrappers = []
 
@@ -41,7 +40,7 @@ def make_eval_envs(  # noqa: C901
 
     if sim_backend == "cpu":
 
-        def cpu_make_env(env_id, seed, video_dir=None, env_kwargs=None):
+        def cpu_make_env(env_id, seed, video_dir=None, env_kwargs=None):  # noqa: ARG001
             if env_kwargs is None:
                 env_kwargs = {}
 
@@ -49,6 +48,7 @@ def make_eval_envs(  # noqa: C901
                 env = gym.make(env_id, reconfiguration_freq=1, **env_kwargs)
                 for wrapper in wrappers:
                     env = wrapper(env)
+                # env = gym.make(env_id, reconfiguration_freq=1, **env_kwargs)
                 env = CPUGymWrapper(env, ignore_terminations=True, record_metrics=True)
                 if video_dir:
                     env = RecordEpisode(
@@ -100,6 +100,8 @@ def make_eval_envs(  # noqa: C901
 def evaluate_via_agent(  # noqa: C901
     agent, envs, num_eval_episodes, sim_backend, progress_bar=False, aex=None
 ):
+    from manten_evaluation.maniskill2.lib.utils_wrappers import ActionExecutor
+
     if aex is None:
         aex = ActionExecutor()
 
@@ -117,9 +119,9 @@ def evaluate_via_agent(  # noqa: C901
         obs, rew, terminated, truncated, info = aex.execute_action_in_env(action_seq, envs)
 
         if truncated.any():
-            assert (
-                truncated.all() == truncated.any()
-            ), "all episodes should truncate at the same time for fair evaluation with other algorithms"
+            assert truncated.all() == truncated.any(), (
+                "all episodes should truncate at the same time for fair evaluation with other algorithms"
+            )
             if isinstance(info["final_info"], dict):
                 for k, v in info["final_info"]["episode"].items():
                     eval_metrics[k].append(v.float().cpu().numpy())
@@ -171,12 +173,16 @@ class ManiskillEvaluation:
         if self.agent_wrapper is not None:
             agent = self.agent_wrapper(agent=agent)
 
+        # load lazy imports
+        wrappers = [wrapper() for wrapper in self.wrappers]
+        aex = self.action_executor() if self.action_executor is not None else None
+
         envs = make_eval_envs(
             env_id=self.env_id,
             num_envs=self.num_envs,
             sim_backend=self.sim_backend,
             env_kwargs=self.env_kwargs,
-            wrappers=self.wrappers,
+            wrappers=wrappers,
             save_video=self.save_video,
             video_dir=self.output_dir,
         )
@@ -187,7 +193,7 @@ class ManiskillEvaluation:
             num_eval_episodes=self.num_eval_episodes,
             sim_backend=self.sim_backend,
             progress_bar=self.progress_bar,
-            aex=self.action_executor,
+            aex=aex,
         )
 
         envs.close()
@@ -211,6 +217,8 @@ class ManiskillEvaluation:
 
 
 if __name__ == "__main__":
+    import gymnasium as gym
+
     env_kwargs = {
         "control_mode": "pd_ee_delta_pose",
         "reward_mode": "sparse",

@@ -20,7 +20,7 @@ from torch import nn
 
 
 class OpenPointsModel(nn.Module):
-    def __init__(self, model):
+    def __init__(self, model, **_kwargs):
         super().__init__()
         self.model = model
 

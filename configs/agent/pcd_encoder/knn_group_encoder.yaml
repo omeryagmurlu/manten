@@ -1,0 +1,8 @@
+_target_: manten.networks.pcd_knn_group_encoder.PCDKNNGroupEncoder
+_partial_: True
+hidden_size: 384
+input_size: 3 # 6 with rgb
+num_groups: 64
+group_size: 32
+group_use_knn: True
+group_radius: null

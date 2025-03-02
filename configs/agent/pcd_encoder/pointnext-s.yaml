@@ -1,4 +1,5 @@
 _target_: manten.networks.utils.openpoints_model.OpenPointsModel
+_partial_: True
 model:
   _target_: manten.networks.vendor.openpoints.backbone.pointnext.PointNextEncoder
   blocks: [1, 1, 1, 1, 1]

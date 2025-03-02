@@ -1,7 +1,7 @@
 # @package _global_
 
 defaults:
-  - /agent: diff_t_c2d3d
+  - /agent: manten_c2d3d
   - /datamodule: maniskill
   - /tasks/maniskill_tasks@task_spec: pick_cube_v1
 
@@ -27,14 +27,14 @@ training:
 accelerator_init_trackers:
   init_kwargs:
     wandb:
-      tags: [diff_t_c2d3d, train_3d_only] # train_2d_only, train_3d_only, train_2d_and_3d
+      tags: [manten_c2d3d, train_3d_only] # train_2d_only, train_3d_only, train_2d_and_3d
 
 agent:
   agent:
     no_color_3d: True
     train_modes: [3d]
     state_encoder:
-      _target_: manten.agents.combined_diffusion_policy.diff_t_combined_policy.cat_all_encoder
+      _target_: manten.agents.combined_manten_policy.manten_combined_policy.cat_all_encoder
       _partial_: True
       excluded_keys: ["tcp_pose"]
 
