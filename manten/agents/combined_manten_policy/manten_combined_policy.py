@@ -137,8 +137,8 @@ class MantenCombinedPolicy(
             cond = obs_cond_3d if mode == "3d" else obs_cond_2d
             if mode == "2d":
                 prediction_by_vis_mode[mode] = self.pred_net(
-                    noisy_action_seq.clone(),
-                    timesteps.clone(),
+                    sample=noisy_action_seq.clone(),
+                    timestep=timesteps.clone(),
                     conds=optree.tree_map(lambda x: x.clone(), cond),
                 )
             elif mode == "3d":
@@ -146,7 +146,7 @@ class MantenCombinedPolicy(
                 t_3d_samples = timesteps.clone()[keep_mask_3d]
                 c_3d_samples = optree.tree_map(lambda x: x[keep_mask_3d].clone(), cond)
                 prediction_by_vis_mode[mode] = self.pred_net(
-                    n_3d_samples, t_3d_samples, conds=c_3d_samples
+                    sample=n_3d_samples, timestep=t_3d_samples, conds=c_3d_samples
                 )
             else:
                 raise ValueError(f"Unsupported train mode {mode}")
@@ -195,10 +195,15 @@ class MantenCombinedPolicy(
                 )
 
                 for k in self.noise_scheduler.timesteps:
+                    if noisy_action_seq.numel() == 0:
+                        break
+
                     # predict noise
+                    ts = k.expand(B).to(self.device)
+
                     pred = self.pred_net(
                         sample=noisy_action_seq,
-                        timestep=k,
+                        timestep=ts,
                         conds=conds,
                     )
 

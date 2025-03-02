@@ -18,14 +18,34 @@ agent:
     min_value: -0.95
     max_value: 0.95
   pred_net:
-    _target_: manten.networks.manten_transformer_for_diffusion.MantenTransformerForDiffusion
+    _target_: manten.networks.manten_transformer_for_diffusion.MantenTransformer
     _partial_: True
     dim: 768
-    attn_layers:
-      _target_: x_transformers.Encoder
+    emb_dropout: 0.1
+    encoder:
+      _target_: manten.networks.manten_transformer_for_diffusion.MantenTransformerWrapper
       _partial_: True
-      depth: 12
-      heads: 8
+      attn_layers:
+        _target_: x_transformers.Encoder
+        _partial_: True
+        # attn_num_mem_kv: 16
+    decoder:
+      _target_: manten.networks.manten_transformer_for_diffusion.MantenTransformerWrapper
+      _partial_: True
+      attn_layers:
+        _target_: x_transformers.Decoder
+        _partial_: True
+    depth: 6
+    heads: 8
+    layer_dropout: 0.1
+    attn_dropout: 0.1
+    ff_dropout: 0.1
+    attn_flash: True
+    # num_memory_tokens: 20
+    use_scalenorm: True
+    post_emb_norm: True
+    ff_glu: True
+    ff_swish: True
   rgb_encoder:
     _target_: manten.networks.vendor.diffusion_policy.vision.multi_image_obs_encoder.MultiImageObsEncoder
     _partial_: True

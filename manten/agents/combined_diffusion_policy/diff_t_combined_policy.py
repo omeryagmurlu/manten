@@ -86,11 +86,11 @@ class DiffusionTransformerCombinedPolicy(
             )
 
         self.pred_net = pred_net(
-            # input_dim=self.act_dim,
-            # output_dim=self.act_dim,
-            # horizon=self.pred_horizon,
-            # n_obs_steps=self.obs_horizon,
-            # cond_dim=self.encode_obs_out_dim,
+            input_dim=self.act_dim,
+            output_dim=self.act_dim,
+            horizon=self.pred_horizon,
+            n_obs_steps=self.obs_horizon,
+            cond_dim=self.encode_obs_out_dim,
         )
 
     @property

@@ -11,6 +11,7 @@ from torch import nn
 from x_transformers.x_transformers import (
     AttentionLayers,
     Decoder,
+    Encoder,
     LayerIntermediates,
     LayerNorm,
     LinearNoBias,
@@ -20,25 +21,49 @@ from x_transformers.x_transformers import (
     calc_z_loss,
     cast_tuple,
     default,
+    dropout_seq,
     exists,
     first,
+    groupby_prefix_and_trim,
     masked_mean,
     pad_at_dim,
+    pick_and_pop,
 )
 
 
-class MantenTransformerForDiffusion(nn.Module):
+def get_named_embed(input_dim, dim):
+    if isinstance(input_dim, int):
+        return nn.Linear(input_dim, dim)
+    elif input_dim == "sinusoidal":
+        return ScaledSinusoidalEmbedding(dim)
+    else:
+        raise ValueError(f"input_dim {input_dim} not recognized")
+
+
+def get_named_pos_embed(num_token, dim):
+    if num_token is None:
+        return nn.Parameter(torch.zeros(1, dim), requires_grad=False)
+
+    if isinstance(num_token, int):
+        return nn.Parameter(torch.randn(num_token, dim))
+    else:
+        for i in num_token:
+            assert isinstance(i, int)
+        return nn.Parameter(torch.randn(*num_token, dim))
+
+
+class MantenTransformerWrapper(nn.Module):
     def __init__(
         self,
         *,
-        act_dim: int,
-        pred_horizon: int,
-        obs_horizon: int,
-        cond_type_num_tokens: dict[str, int],
-        cond_type_input_dims: dict[str, int],
+        named_types: tuple[str] | None = None,
+        named_type_num_tokens: dict | None = None,
+        named_type_input_dims: dict | None = None,
+        output_dim: int | None = None,
+        input_dim: int | None = None,
+        num_token: int | None = None,
         dim: int | None = None,
-        attn_layers: Callable[..., AttentionLayers] | AttentionLayers,
-        cond_types: tuple[str] = ("state", "rgb", "pcd"),
+        attn_layers: type[AttentionLayers] | AttentionLayers,
         emb_dim=None,
         max_mem_len=0,
         shift_mem_down=0,
@@ -46,8 +71,8 @@ class MantenTransformerForDiffusion(nn.Module):
         post_emb_norm=False,
         num_memory_tokens=None,
         memory_tokens_interspersed_every=None,
-        logits_dim=None,
         return_only_embed=False,
+        return_sample_tokens=False,
         num_output_heads=1,
         recycling=False,  # from Jumper et al. - Alphafold2
         train_max_recycle_steps=4,  # saw a benefit for language modeling up to 3 recycling steps, so let's default this to 4
@@ -56,6 +81,7 @@ class MantenTransformerForDiffusion(nn.Module):
         use_cls_token=False,
         num_cls_tokens=1,
         squeeze_out_last_dim=False,
+        **kwargs,
     ):
         super().__init__()
 
@@ -67,28 +93,37 @@ class MantenTransformerForDiffusion(nn.Module):
         self.max_mem_len = max_mem_len
         self.shift_mem_down = shift_mem_down
 
-        self.obs_horizon = obs_horizon
-        self.pred_horizon = pred_horizon
-        self.act_dim = act_dim
+        if input_dim is not None:
+            assert num_token is not None, (
+                "num_token must be provided if input_dim is provided"
+            )
+            self.sample_emb = nn.Linear(input_dim, emb_dim)
+            # pred horizon is taken as num_token
+            self.sample_pos_emb = nn.Parameter(torch.randn(num_token, emb_dim))
+        else:
+            self.sample_emb = None
+            self.sample_pos_emb = None
 
-        self.sample_emb = nn.Linear(act_dim, emb_dim)
-        # pred horizon is taken as num_token
-        self.sample_pos_emb = nn.Parameter(torch.randn(pred_horizon, emb_dim))
-        self.cond_embs = nn.ModuleDict(
-            {
-                f"cond_{name}_embed": nn.Linear(cond_type_input_dims[name], emb_dim)
-                for name in cond_types
-            }
-        )
-        self.cond_pos_embs = nn.ParameterDict(
-            {
-                f"cond_{name}_pos_embed": nn.Parameter(
-                    torch.randn(obs_horizon, cond_type_num_tokens[name], emb_dim)
-                )
-                for name in cond_types
-            }
-        )
-        self.time_emb = ScaledSinusoidalEmbedding(emb_dim)
+        if named_types is not None:
+            self.named_embs = nn.ModuleDict(
+                {
+                    f"named_{name}_embed": get_named_embed(
+                        named_type_input_dims[name], emb_dim
+                    )
+                    for name in named_types
+                }
+            )
+            self.named_pos_embs = nn.ParameterDict(
+                {
+                    f"named_{name}_pos_embed": get_named_pos_embed(
+                        named_type_num_tokens[name], emb_dim
+                    )
+                    for name in named_types
+                }
+            )
+        else:
+            self.named_embs = None
+            self.named_pos_embs = None
 
         # fraction of the gradient that should go to the embedding, https://arxiv.org/abs/2105.13290
 
@@ -102,7 +137,7 @@ class MantenTransformerForDiffusion(nn.Module):
         if isinstance(attn_layers, AttentionLayers):
             self.attn_layers = attn_layers
         else:
-            self.attn_layers = attn_layers(dim=dim)
+            self.attn_layers = attn_layers(dim=dim, **kwargs)
 
         self.init_()
 
@@ -130,8 +165,9 @@ class MantenTransformerForDiffusion(nn.Module):
         self.average_pool_embed = average_pool_embed
 
         # output head, usually to logits of num_tokens
-
-        logits_dim = default(logits_dim, self.act_dim)
+        output_dim = default(output_dim, input_dim)
+        if output_dim is None:
+            return_only_embed = True
 
         self.has_multiple_heads = num_output_heads > 1
 
@@ -139,10 +175,12 @@ class MantenTransformerForDiffusion(nn.Module):
             self.to_logits = None
         elif num_output_heads > 1:
             self.to_logits = nn.ModuleDict(
-                [LinearNoBias(dim, logits_dim) for _ in range(num_output_heads)]
+                [LinearNoBias(dim, output_dim) for _ in range(num_output_heads)]
             )
         else:
-            self.to_logits = LinearNoBias(dim, logits_dim)
+            self.to_logits = LinearNoBias(dim, output_dim)
+
+        self.return_sample_tokens = return_sample_tokens
 
         # memory tokens (like [cls]) from Memory Transformers paper
 
@@ -166,21 +204,23 @@ class MantenTransformerForDiffusion(nn.Module):
 
     def init_(self):
         # init embs
-        nn.init.normal_(self.sample_pos_emb, std=1e-5)
-        for emb in self.cond_pos_embs.values():
-            nn.init.normal_(emb, std=1e-5)
+        if self.sample_emb is not None:
+            nn.init.normal_(self.sample_pos_emb, std=1e-5)
+        if self.named_embs is not None:
+            for emb in self.named_pos_embs.values():
+                nn.init.normal_(emb, std=1e-5)
 
     def forward(
         self,
-        sample,
-        timestep,
-        conds,
+        sample=None,
+        nameds=None,
         return_embeddings=False,
         return_logits_and_embeddings=False,
         return_intermediates=False,
         return_logit_entropies=False,
-        return_sample_tokens=True,
+        return_sample_tokens: bool | None = None,
         mask=None,
+        named_masks=None,
         return_mems=False,
         return_attn=False,
         mems=None,
@@ -192,71 +232,103 @@ class MantenTransformerForDiffusion(nn.Module):
         cache: LayerIntermediates | None = None,
         **kwargs,
     ):
-        sample_cond = next(iter(conds.values()))
+        assert sample is not None or nameds is not None, (
+            "either `sample` or `nameds` must be provided"
+        )
+
+        return_sample_tokens = default(return_sample_tokens, self.return_sample_tokens)
+
+        s = sample if exists(sample) else next(iter(nameds.values()))
         (
             b,
-            obs_horizon,
-            pred_horizon,
             device,
             num_mems,
             has_memory_tokens,
             emb_frac_gradient,
             orig_mask,
         ) = (
-            sample.shape[0],
-            sample_cond.shape[-3],
-            sample.shape[-2],
-            sample.device,
+            s.shape[0],
+            s.device,
             self.num_memory_tokens,
             self.num_memory_tokens > 0,
             self.emb_frac_gradient,
             mask,
         )
 
-        assert self.obs_horizon == obs_horizon, "input shape mismatch, check `obs_horizon`"
-        assert self.pred_horizon == pred_horizon, "input shape mismatch, check `pred_horizon`"
-
         return_hiddens = return_mems | return_attn | return_intermediates | return_attn_z_loss
         return_embeddings = return_embeddings | (not exists(self.to_logits))
 
         # 1. time
-        timesteps = timestep
-        if not torch.is_tensor(timesteps):
-            # TODO: this requires sync between CPU and GPU. So try to pass timesteps as tensors if you can
-            timesteps = torch.tensor([timesteps], dtype=torch.long, device=sample.device)
-        elif torch.is_tensor(timesteps) and len(timesteps.shape) == 0:
-            timesteps = timesteps[None].to(sample.device)
-        # broadcast to batch dimension in a way that's compatible with ONNX/Core ML
-        timesteps = timesteps.expand(sample.shape[0])
-        time = self.time_emb(timesteps.unsqueeze(0)).unsqueeze(1)  # B 1 D
+        # timesteps = timestep
+        # if not torch.is_tensor(timesteps):
+        #     # TODO: this requires sync between CPU and GPU. So try to pass timesteps as tensors if you can
+        #     timesteps = torch.tensor([timesteps], dtype=torch.long, device=sample.device)
+        # elif torch.is_tensor(timesteps) and len(timesteps.shape) == 0:
+        #     timesteps = timesteps[None].to(sample.device)
+        # # broadcast to batch dimension in a way that's compatible with ONNX/Core ML
+        # timesteps = timesteps.expand(sample.shape[0])
+        # time = self.time_emb(timesteps.unsqueeze(0)).unsqueeze(1)  # B 1 D
 
-        sample = self.sample_emb(sample) + self.sample_pos_emb  # B T D
+        if self.sample_emb is not None:
+            sample = self.sample_emb(sample) + self.sample_pos_emb  # B T D
+        else:
+            sample = torch.tensor([], device=device)
 
-        conds = {
-            k: self.cond_embs[f"cond_{k}_embed"](v)
-            + self.cond_pos_embs[f"cond_{k}_pos_embed"]
-            for k, v in conds.items()
-        }
-        conds = torch.cat(
-            [einops.rearrange(elem, "b n t d -> b (n t) d") for elem in conds.values()],
-            dim=-2,
-        )  # B N*T D
+        if self.named_embs is not None:
+            nameds = {
+                k: self.named_embs[f"named_{k}_embed"](v)
+                + self.named_pos_embs[f"named_{k}_pos_embed"]
+                for k, v in nameds.items()
+            }
+            nameds = {
+                k: named
+                if len(named.shape) == 4  # noqa: PLR2004 # B T N D
+                else named.view(b, *([1] * (4 - len(named.shape))), -1)
+                for k, named in nameds.items()
+            }
+            nameds = torch.cat(
+                [einops.rearrange(elem, "b t n d -> b (t n) d") for elem in nameds.values()],
+                dim=-2,
+            )  # B N*T D
 
-        x = torch.cat([sample, time, conds], dim=-2)  # B num_token D
+            if named_masks is not None:
+                named_masks = torch.cat(
+                    [
+                        einops.rearrange(elem, "b ... -> b (...)")
+                        for elem in named_masks.values()
+                    ],
+                    dim=-1,
+                )
+        else:
+            nameds = torch.tensor([], device=device)
 
-        sample_slice = (slice(None), slice(0, sample.shape[1]), slice(None))
+        if sample.numel() and nameds.numel():
+            x = torch.cat([sample, nameds], dim=-2)  # B num_token D
+            sample_slice = (slice(None), slice(0, sample.shape[1]), slice(None))
+            if exists(mask) or exists(named_masks):
+                mask = (
+                    mask
+                    if exists(mask)
+                    else torch.ones(*sample.shape[:-1], device=device, dtype=torch.bool)
+                )
+                named_masks = (
+                    named_masks
+                    if exists(named_masks)
+                    else torch.ones(*nameds.shape[:-1], device=device, dtype=torch.bool)
+                )
+                mask = torch.cat([mask, named_masks], dim=-1)
+        elif sample.numel():
+            x = sample
+            sample_slice = (slice(None), slice(None), slice(None))
+            # mask = mask
+        elif nameds.numel():
+            x = nameds
+            sample_slice = None
+            mask = named_masks
+        else:
+            raise ValueError("either `sample` or `nameds` must be provided")
+
         n = x.shape[1]
-
-        if mask is not None:
-            # extend mask to include conditioning as ones
-            mask = torch.cat(
-                [
-                    mask,
-                    torch.ones(time.shape[:-1], device=device, dtype=torch.bool),
-                    torch.ones(conds.shape[:-1], device=device, dtype=torch.bool),
-                ],
-                dim=-1,
-            )
 
         # post embedding norm, purportedly leads to greater stabilization
 
@@ -462,3 +534,114 @@ class MantenTransformerForDiffusion(nn.Module):
             return out, attn_maps
 
         return out
+
+
+class MantenTransformer(nn.Module):
+    def __init__(
+        self,
+        *,
+        act_dim,
+        pred_horizon,
+        obs_horizon,
+        cond_type_num_tokens: dict,
+        cond_type_input_dims: dict,
+        cond_types=("time", "rgb", "pcd", "state"),
+        add_time_as_cond_if_absent=True,
+        dim,
+        encoder: type[MantenTransformerWrapper] | None = None,
+        decoder: type[MantenTransformerWrapper] | None = None,
+        cross_attn_tokens_dropout=0.0,
+        **kwargs,
+    ):
+        super().__init__()
+        self.cross_attn_tokens_dropout = cross_attn_tokens_dropout  # how many tokens from the encoder to dropout when cross attending from decoder - seen in a couple papers, including Perceiver AR - this will also be very effective regularization when cross attending to very long memories
+
+        if add_time_as_cond_if_absent and "time" not in cond_types:
+            cond_types = ("time", *cond_types)
+            cond_type_input_dims["time"] = "sinusoidal"
+            cond_type_num_tokens["time"] = None
+
+        cond_type_num_tokens = optree.tree_map(
+            lambda x: (obs_horizon, *x)
+            if isinstance(x, tuple)
+            else (obs_horizon, x)
+            if isinstance(x, int)
+            else x,
+            cond_type_num_tokens,
+        )
+
+        if exists(encoder) and exists(decoder):
+            self.encoder = encoder(
+                dim=dim,
+                named_types=cond_types,
+                named_type_num_tokens=cond_type_num_tokens,
+                named_type_input_dims=cond_type_input_dims,
+                return_only_embed=True,
+                **kwargs,
+            )
+            self.decoder = decoder(
+                dim=dim,
+                input_dim=act_dim,
+                num_token=pred_horizon,
+                cross_attend=True,
+                **kwargs,
+            )
+        elif exists(encoder):
+            self.encoder = encoder(
+                dim=dim,
+                named_types=cond_types,
+                named_type_num_tokens=cond_type_num_tokens,
+                named_type_input_dims=cond_type_input_dims,
+                input_dim=act_dim,
+                num_token=pred_horizon,
+                return_sample_tokens=True,
+                **kwargs,
+            )
+            self.decoder = None
+        elif exists(decoder):
+            raise NotImplementedError("decoder only not implemented yet")
+            # self.encoder = None
+            # self.decoder = decoder(
+            #     dim=dim,
+            #     named_types=cond_types,
+            #     named_type_num_tokens=cond_type_num_tokens,
+            #     named_type_input_dims=cond_type_input_dims,
+            #     input_dim=act_dim,
+            #     return_sample_tokens=True,
+            # )
+        else:
+            raise ValueError("either `encoder` or `decoder` must be provided")
+
+        # beam search etc not useful (imho) and too computationally expensive for action diffusion
+        # self.decoder = AutoregressiveWrapper(
+
+    def forward(self, sample, conds, timestep=None, mask=None, attn_mask=None):
+        if timestep is not None:
+            # because of a random quirk in scaled sinusoidal position encoding implementation, unsquueze
+            conds["time"] = timestep.unsqueeze(0)
+            timestep = None
+
+        if exists(self.encoder) and exists(self.decoder):
+            enc = self.encoder(
+                nameds=conds,
+                mask=mask,
+                attn_mask=attn_mask,
+                return_embeddings=True,
+            )
+
+            if self.training and self.cross_attn_tokens_dropout > 0:
+                enc, mask = dropout_seq(enc, mask, self.cross_attn_tokens_dropout)
+
+            out = self.decoder(sample=sample, context=enc, context_mask=mask)
+            return out
+        elif exists(self.encoder):
+            return self.encoder(
+                sample=sample,
+                nameds=conds,
+                mask=mask,
+                attn_mask=attn_mask,
+            )
+        elif exists(self.decoder):
+            raise NotImplementedError("decoder only not implemented yet")
+        else:
+            raise ValueError("either `encoder` or `decoder` must be provided")
