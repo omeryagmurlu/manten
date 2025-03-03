@@ -551,24 +551,30 @@ class MantenTransformer(nn.Module):
         encoder: type[MantenTransformerWrapper] | None = None,
         decoder: type[MantenTransformerWrapper] | None = None,
         cross_attn_tokens_dropout=0.0,
+        concat_cond_dims_into_one=False,
         **kwargs,
     ):
         super().__init__()
         self.cross_attn_tokens_dropout = cross_attn_tokens_dropout  # how many tokens from the encoder to dropout when cross attending from decoder - seen in a couple papers, including Perceiver AR - this will also be very effective regularization when cross attending to very long memories
 
+        cond_type_num_tokens = optree.tree_map(
+            lambda x: (obs_horizon, x) if isinstance(x, int) else x,
+            cond_type_num_tokens,
+        )
+
+        self.cond_concat_hack = concat_cond_dims_into_one
+        if self.cond_concat_hack:
+            cond_type_num_tokens = {"_".join(cond_types): (obs_horizon, 1)}
+            cond_type_input_dims = {
+                "_".join(cond_types): sum(cond_type_input_dims[name] for name in cond_types)
+            }
+            self.orig_cond_types = cond_types
+            cond_types = ["_".join(cond_types)]
+
         if add_time_as_cond_if_absent and "time" not in cond_types:
             cond_types = ("time", *cond_types)
             cond_type_input_dims["time"] = "sinusoidal"
             cond_type_num_tokens["time"] = None
-
-        cond_type_num_tokens = optree.tree_map(
-            lambda x: (obs_horizon, *x)
-            if isinstance(x, tuple)
-            else (obs_horizon, x)
-            if isinstance(x, int)
-            else x,
-            cond_type_num_tokens,
-        )
 
         if exists(encoder) and exists(decoder):
             self.encoder = encoder(
@@ -620,6 +626,12 @@ class MantenTransformer(nn.Module):
         # self.decoder = AutoregressiveWrapper(
 
     def forward(self, sample, conds, timestep=None, mask=None, attn_mask=None):
+        if self.cond_concat_hack:
+            comb_cond_name = "_".join(self.orig_cond_types)
+            conds = {
+                comb_cond_name: torch.cat([conds[name] for name in self.orig_cond_types], dim=-1)
+            }
+
         if timestep is not None:
             # because of a random quirk in scaled sinusoidal position encoding implementation, unsquueze
             conds["time"] = timestep.unsqueeze(0)
