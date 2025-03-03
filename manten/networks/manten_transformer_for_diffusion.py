@@ -584,6 +584,7 @@ class MantenTransformer(nn.Module):
                 input_dim=act_dim,
                 num_token=pred_horizon,
                 cross_attend=True,
+                return_only_embed=True,
                 **kwargs,
             )
         elif exists(encoder):
@@ -594,7 +595,7 @@ class MantenTransformer(nn.Module):
                 named_type_input_dims=cond_type_input_dims,
                 input_dim=act_dim,
                 num_token=pred_horizon,
-                return_sample_tokens=True,
+                return_only_embed=True,
                 **kwargs,
             )
             self.decoder = None
@@ -611,6 +612,9 @@ class MantenTransformer(nn.Module):
             # )
         else:
             raise ValueError("either `encoder` or `decoder` must be provided")
+
+        self.ln_f = nn.LayerNorm(dim)
+        self.head = nn.Linear(dim, act_dim)
 
         # beam search etc not useful (imho) and too computationally expensive for action diffusion
         # self.decoder = AutoregressiveWrapper(
@@ -633,9 +637,8 @@ class MantenTransformer(nn.Module):
                 enc, mask = dropout_seq(enc, mask, self.cross_attn_tokens_dropout)
 
             out = self.decoder(sample=sample, context=enc, context_mask=mask)
-            return out
         elif exists(self.encoder):
-            return self.encoder(
+            out = self.encoder(
                 sample=sample,
                 nameds=conds,
                 mask=mask,
@@ -645,3 +648,7 @@ class MantenTransformer(nn.Module):
             raise NotImplementedError("decoder only not implemented yet")
         else:
             raise ValueError("either `encoder` or `decoder` must be provided")
+
+        out = self.ln_f(out)
+        out = self.head(out)
+        return out

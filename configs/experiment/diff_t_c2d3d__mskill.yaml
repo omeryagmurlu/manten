@@ -18,7 +18,7 @@ training:
   eval_test:
     max_steps: 6
   custom_eval:
-    every_n_global_steps: ${training.num_global_steps}
+    every_n_global_steps: 100000000
     skip_first_global_steps: 0
 
   # resume_from_save: /home/reuss/manten/outputs/training/manten_maniskill_PickCube-v1/last_training/accelerate/resume
