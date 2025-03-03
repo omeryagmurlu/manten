@@ -20,9 +20,18 @@ from torch import nn
 
 
 class OpenPointsModel(nn.Module):
-    def __init__(self, model, **_kwargs):
+    def __init__(self, model, aggregate="mean", **_kwargs):
         super().__init__()
         self.model = model
+
+        if aggregate is None:
+            self.agg_fn = lambda x: x
+        elif aggregate == "mean":
+            self.agg_fn = lambda x: einops.reduce(
+                x, "b f c -> b f 1", reduction="mean"
+            ).squeeze(-1)
+        else:
+            raise ValueError(f"Unknown aggregation method: {aggregate}")
 
     def forward(self, pcd_obs, pcd_mask):
         # pcd_obs['camera1'].shape
@@ -44,6 +53,6 @@ class OpenPointsModel(nn.Module):
 
         res = self.model(pcd)
 
-        res = einops.reduce(res, "b f c -> b f 1", reduction="mean").squeeze(-1)
+        res = self.agg_fn(res)
 
         return res
