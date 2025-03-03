@@ -196,6 +196,10 @@ class MantenCombinedPolicy(
 
                 for k in self.noise_scheduler.timesteps:
                     if noisy_action_seq.numel() == 0:
+                        # if the mask is empty,
+                        break
+                    if tuple(sorted(conds.keys())) != tuple(sorted(obs.keys())):
+                        # missing an observation
                         break
 
                     # predict noise
@@ -230,30 +234,6 @@ class MantenCombinedPolicy(
         start = self.obs_horizon - 1
         end = start + self.act_horizon
         return noisy_action_seq[:, start:end]  # (B, act_horizon, act_dim)
-
-    def get_combined_cond(self, obs_cond_3d, obs_cond_2d, keep_mask_3d):
-        pass
-        # if "2d" not in self.train_modes:
-        #     assert "3d" in self.train_modes, "At least one of 2d or 3d must be in train_modes"
-        #     assert obs_cond_3d.shape[-1] == self.encode_obs_out_shape
-        #     return obs_cond_3d
-        # if "3d" not in self.train_modes:
-        #     assert "2d" in self.train_modes, "At least one of 2d or 3d must be in train_modes"
-        #     assert obs_cond_2d.shape[-1] == self.encode_obs_out_shape
-        #     return obs_cond_2d
-
-        # assert obs_cond_3d.shape[-1] == obs_cond_2d.shape[-1] == self.encode_obs_out_shape, (
-        #     "Both 2d and 3d conditions must have the same output dim"
-        # )
-
-        # return torch.where(
-        #     ~keep_mask_3d.view(
-        #         keep_mask_3d.shape[0],
-        #         *get_ones_shape_like(obs_cond_3d)[1:],
-        #     ),
-        #     obs_cond_2d,
-        #     obs_cond_3d,
-        # )
 
     def adapt_actions_from_ds_actions(self, actions):
         return actions[..., : self.act_horizon, :]

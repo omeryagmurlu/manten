@@ -1,0 +1,9 @@
+_target_: manten.networks.manten_transformer_for_diffusion_v2.MantenTransformerV2
+_partial_: True
+n_layer: 12
+n_head: 12
+n_emb: 768
+p_drop_emb: 0.1
+p_drop_attn: 0.1
+causal_attn: False
+n_cond_layers: 0 # use a simple linear layer to condition the decoder

@@ -5,6 +5,8 @@ defaults:
   - /datamodule: maniskill
   - /tasks/maniskill_tasks@task_spec: pick_cube_v1
 
+  - override /agent/pred_net@agent.agent.pred_net: manten_transformer_v2
+
 project_name: manten_maniskill_${task_spec.env_id}
 
 _save_every_n_gs: 10000
