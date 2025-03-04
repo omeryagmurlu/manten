@@ -40,13 +40,17 @@ class MantenTransformerV2(ModuleAttrMixin):
         cond_type_input_dims: dict,
         cond_types=("rgb", "pcd", "state"),
         n_layer: int = 12,
-        n_head: int = 12,
         n_emb: int = 768,
         p_drop_emb: float = 0.1,
-        p_drop_attn: float = 0.1,
-        causal_attn: bool = False,
         n_cond_layers: int = 0,
+        ff_mult: int = 4,
+        layer_kwargs: dict | None = None,
+        concat_cond_dims_into_one=False,
+        causal_attn: bool = False,
     ) -> None:
+        if layer_kwargs is None:
+            layer_kwargs = {}
+
         super().__init__()
 
         cond_type_num_tokens = optree.tree_map(
@@ -54,15 +58,15 @@ class MantenTransformerV2(ModuleAttrMixin):
             cond_type_num_tokens,
         )
 
-        # hack for now to combine conds with the signature
-        cond_type_num_tokens = {"_".join(cond_types): (obs_horizon, 1)}
-        cond_type_input_dims = {
-            "_".join(cond_types): sum(cond_type_input_dims[name] for name in cond_types)
-        }
-        self.orig_cond_types = cond_types
-        cond_types = ["_".join(cond_types)]
+        self.cond_concat_hack = concat_cond_dims_into_one
+        if self.cond_concat_hack:
+            cond_type_num_tokens = {"_".join(cond_types): (obs_horizon, 1)}
+            cond_type_input_dims = {
+                "_".join(cond_types): sum(cond_type_input_dims[name] for name in cond_types)
+            }
+            self.orig_cond_types = cond_types
+            cond_types = ["_".join(cond_types)]
 
-        # input embedding stem
         self.sample_emb = nn.Linear(act_dim, n_emb)
         self.pos_emb = nn.Parameter(torch.zeros(1, pred_horizon, n_emb))
         self.drop = nn.Dropout(p_drop_emb)
@@ -84,34 +88,26 @@ class MantenTransformerV2(ModuleAttrMixin):
             }
         )
 
-        # if n_cond_layers > 0:
-        #     encoder_layer = nn.TransformerEncoderLayer(
-        #         d_model=n_emb,
-        #         nhead=n_head,
-        #         dim_feedforward=4 * n_emb,
-        #         dropout=p_drop_attn,
-        #         activation="gelu",
-        #         batch_first=True,
-        #         norm_first=True,
-        #     )
-        #     self.encoder = nn.TransformerEncoder(
-        #         encoder_layer=encoder_layer, num_layers=n_cond_layers
-        #     )
-        # else:
-        self.encoder = nn.Sequential(
-            nn.Linear(n_emb, 4 * n_emb), nn.Mish(), nn.Linear(4 * n_emb, n_emb)
-        )
+        if n_cond_layers > 0:
+            self.encoder = nn.TransformerEncoder(
+                encoder_layer=nn.TransformerEncoderLayer(
+                    d_model=n_emb, dim_feedforward=ff_mult * n_emb, **layer_kwargs
+                ),
+                num_layers=n_cond_layers,
+            )
+        else:
+            self.encoder = nn.Sequential(
+                nn.Linear(n_emb, ff_mult * n_emb),
+                nn.Mish(),
+                nn.Linear(ff_mult * n_emb, n_emb),
+            )
         # decoder
-        decoder_layer = nn.TransformerDecoderLayer(
-            d_model=n_emb,
-            nhead=n_head,
-            dim_feedforward=4 * n_emb,
-            dropout=p_drop_attn,
-            activation="gelu",
-            batch_first=True,
-            norm_first=True,  # important for stability
+        self.decoder = nn.TransformerDecoder(
+            decoder_layer=nn.TransformerDecoderLayer(
+                d_model=n_emb, dim_feedforward=ff_mult * n_emb, **layer_kwargs
+            ),
+            num_layers=n_layer,
         )
-        self.decoder = nn.TransformerDecoder(decoder_layer=decoder_layer, num_layers=n_layer)
 
         # attention mask
         if causal_attn:
@@ -144,7 +140,7 @@ class MantenTransformerV2(ModuleAttrMixin):
         self.apply(self._init_weights)
         logger.info("number of parameters: %e", sum(p.numel() for p in self.parameters()))
 
-    def _init_weights(self, module):  # noqa: C901
+    def _init_weights(self, module):
         ignore_types = (
             nn.Dropout,
             SinusoidalPosEmb,
@@ -159,29 +155,32 @@ class MantenTransformerV2(ModuleAttrMixin):
             nn.ParameterDict,
         )
         if isinstance(module, (nn.Linear, nn.Embedding)):
-            torch.nn.init.normal_(module.weight, mean=0.0, std=0.02)
-            if isinstance(module, nn.Linear) and module.bias is not None:
-                torch.nn.init.zeros_(module.bias)
+            pass  # TODO diff init, need to chec
+            # torch.nn.init.normal_(module.weight, mean=0.0, std=0.02)
+            # if isinstance(module, nn.Linear) and module.bias is not None:
+            #     torch.nn.init.zeros_(module.bias)
         elif isinstance(module, nn.MultiheadAttention):
-            weight_names = [
-                "in_proj_weight",
-                "q_proj_weight",
-                "k_proj_weight",
-                "v_proj_weight",
-            ]
-            for name in weight_names:
-                weight = getattr(module, name)
-                if weight is not None:
-                    torch.nn.init.normal_(weight, mean=0.0, std=0.02)
+            pass  # TODO diff init, need to check
+            # weight_names = [
+            #     "in_proj_weight",
+            #     "q_proj_weight",
+            #     "k_proj_weight",
+            #     "v_proj_weight",
+            # ]
+            # for name in weight_names:
+            #     weight = getattr(module, name)
+            #     if weight is not None:
+            #         torch.nn.init.normal_(weight, mean=0.0, std=0.02)
 
-            bias_names = ["in_proj_bias", "bias_k", "bias_v"]
-            for name in bias_names:
-                bias = getattr(module, name)
-                if bias is not None:
-                    torch.nn.init.zeros_(bias)
+            # bias_names = ["in_proj_bias", "bias_k", "bias_v"]
+            # for name in bias_names:
+            #     bias = getattr(module, name)
+            #     if bias is not None:
+            #         torch.nn.init.zeros_(bias)
         elif isinstance(module, nn.LayerNorm):
-            torch.nn.init.zeros_(module.bias)
-            torch.nn.init.ones_(module.weight)
+            pass  # same as default
+            # torch.nn.init.zeros_(module.bias)
+            # torch.nn.init.ones_(module.weight)
         elif isinstance(module, MantenTransformerV2):
             torch.nn.init.normal_(module.pos_emb, mean=0.0, std=0.02)
             for emb in module.cond_pos_embs.values():
@@ -192,99 +191,17 @@ class MantenTransformerV2(ModuleAttrMixin):
         else:
             raise TypeError(f"Unaccounted module {module}")
 
-    def get_optim_groups(self, weight_decay: float = 1e-3):
-        """
-        This long function is unfortunately doing something very simple and is being very defensive:
-        We are separating out all parameters of the model into two buckets: those that will experience
-        weight decay for regularization and those that won't (biases, and layernorm/embedding weights).
-        We are then returning the PyTorch optimizer object.
-        """
+    def forward(self, sample, conds, timestep=None):
+        timestep = timestep.expand(sample.shape[0])
+        time_emb = self.time_emb(timestep)  # (B,n_emb)
 
-        # separate out all parameters to those that will and won't experience regularizing weight decay
-        decay = set()
-        no_decay = set()
-        whitelist_weight_modules = (torch.nn.Linear, torch.nn.MultiheadAttention)
-        blacklist_weight_modules = (torch.nn.LayerNorm, torch.nn.Embedding)
-        for mn, m in self.named_modules():
-            for pn, _p in m.named_parameters():
-                fpn = f"{mn}.{pn}" if mn else pn  # full param name
-
-                if pn.endswith("bias"):
-                    # all biases will not be decayed
-                    no_decay.add(fpn)
-                elif pn.startswith("bias"):
-                    # MultiheadAttention bias starts with "bias"
-                    no_decay.add(fpn)
-                elif pn.endswith("weight") and isinstance(m, whitelist_weight_modules):
-                    # weights of whitelist modules will be weight decayed
-                    decay.add(fpn)
-                elif pn.endswith("weight") and isinstance(m, blacklist_weight_modules):
-                    # weights of blacklist modules will NOT be weight decayed
-                    no_decay.add(fpn)
-
-        # special case the position embedding parameter in the root GPT module as not decayed
-        no_decay.add("pos_emb")
-        no_decay.add("_dummy_variable")
-        if self.cond_pos_emb is not None:
-            no_decay.add("cond_pos_emb")
-
-        # validate that we considered every parameter
-        param_dict = dict(self.named_parameters())
-        inter_params = decay & no_decay
-        union_params = decay | no_decay
-        assert len(inter_params) == 0, (
-            f"parameters {inter_params!s} made it into both decay/no_decay sets!"
-        )
-        assert len(param_dict.keys() - union_params) == 0, (
-            f"parameters {(param_dict.keys() - union_params)!s} were not separated into either decay/no_decay set!"
-        )
-
-        # create the pytorch optimizer object
-        optim_groups = [
-            {
-                "params": [param_dict[pn] for pn in sorted(decay)],
-                "weight_decay": weight_decay,
-            },
-            {
-                "params": [param_dict[pn] for pn in sorted(no_decay)],
-                "weight_decay": 0.0,
-            },
-        ]
-        return optim_groups
-
-    def configure_optimizers(
-        self,
-        learning_rate: float = 1e-4,
-        weight_decay: float = 1e-3,
-        betas: tuple[float, float] = (0.9, 0.95),
-    ):
-        optim_groups = self.get_optim_groups(weight_decay=weight_decay)
-        optimizer = torch.optim.AdamW(optim_groups, lr=learning_rate, betas=betas)
-        return optimizer
-
-    def forward(self, sample, conds, timestep=None, **_kwargs):
-        """
-        x: (B,T,input_dim)
-        timestep: (B,) or int, diffusion step
-        cond: (B,T',cond_dim)
-        output: (B,T,input_dim)
-        """
-        # 1. time
-        timesteps = timestep
-        if not torch.is_tensor(timesteps):
-            # TODO: this requires sync between CPU and GPU. So try to pass timesteps as tensors if you can
-            timesteps = torch.tensor([timesteps], dtype=torch.long, device=sample.device)
-        elif torch.is_tensor(timesteps) and len(timesteps.shape) == 0:
-            timesteps = timesteps[None].to(sample.device)
-        # broadcast to batch dimension in a way that's compatible with ONNX/Core ML
-        timesteps = timesteps.expand(sample.shape[0])
-        time_emb = self.time_emb(timesteps)  # (B,n_emb)
-
-        # hack for conds:
-        comb_cond_name = "_".join(self.orig_cond_types)
-        conds = {
-            comb_cond_name: torch.cat([conds[name] for name in self.orig_cond_types], dim=-1)
-        }
+        if self.cond_concat_hack:
+            comb_cond_name = "_".join(self.orig_cond_types)
+            conds = {
+                comb_cond_name: torch.cat(
+                    [conds[name] for name in self.orig_cond_types], dim=-1
+                )
+            }
 
         # encoder
         conds = {
@@ -304,9 +221,8 @@ class MantenTransformerV2(ModuleAttrMixin):
         # decoder
         x = self.sample_emb(sample) + self.pos_emb  # (B,pred_horizon,n_emb)
         x = self.drop(x)
-        x = self.decoder(
-            tgt=x, memory=memory, tgt_mask=self.mask, memory_mask=self.memory_mask
-        )
+        x = self.decoder(tgt=x, memory=memory)
+        # , tgt_mask=self.mask, memory_mask=self.memory_mask
 
         # head
         x = self.ln_f(x)
