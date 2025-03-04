@@ -6,7 +6,7 @@ dim: 768
 emb_dropout: 0.1
 ff_mult: 4
 
-# concat_cond_dims_into_one: True
+concat_cond_dims_into_one: True
 
 layer_kwargs:
   heads: 8
