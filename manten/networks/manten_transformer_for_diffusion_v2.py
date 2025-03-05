@@ -155,32 +155,29 @@ class MantenTransformerV2(ModuleAttrMixin):
             nn.ParameterDict,
         )
         if isinstance(module, (nn.Linear, nn.Embedding)):
-            pass  # TODO diff init, need to chec
-            # torch.nn.init.normal_(module.weight, mean=0.0, std=0.02)
-            # if isinstance(module, nn.Linear) and module.bias is not None:
-            #     torch.nn.init.zeros_(module.bias)
+            torch.nn.init.normal_(module.weight, mean=0.0, std=0.02)
+            if isinstance(module, nn.Linear) and module.bias is not None:
+                torch.nn.init.zeros_(module.bias)
         elif isinstance(module, nn.MultiheadAttention):
-            pass  # TODO diff init, need to check
-            # weight_names = [
-            #     "in_proj_weight",
-            #     "q_proj_weight",
-            #     "k_proj_weight",
-            #     "v_proj_weight",
-            # ]
-            # for name in weight_names:
-            #     weight = getattr(module, name)
-            #     if weight is not None:
-            #         torch.nn.init.normal_(weight, mean=0.0, std=0.02)
+            weight_names = [
+                "in_proj_weight",
+                "q_proj_weight",
+                "k_proj_weight",
+                "v_proj_weight",
+            ]
+            for name in weight_names:
+                weight = getattr(module, name)
+                if weight is not None:
+                    torch.nn.init.normal_(weight, mean=0.0, std=0.02)
 
-            # bias_names = ["in_proj_bias", "bias_k", "bias_v"]
-            # for name in bias_names:
-            #     bias = getattr(module, name)
-            #     if bias is not None:
-            #         torch.nn.init.zeros_(bias)
+            bias_names = ["in_proj_bias", "bias_k", "bias_v"]
+            for name in bias_names:
+                bias = getattr(module, name)
+                if bias is not None:
+                    torch.nn.init.zeros_(bias)
         elif isinstance(module, nn.LayerNorm):
-            pass  # same as default
-            # torch.nn.init.zeros_(module.bias)
-            # torch.nn.init.ones_(module.weight)
+            torch.nn.init.zeros_(module.bias)
+            torch.nn.init.ones_(module.weight)
         elif isinstance(module, MantenTransformerV2):
             torch.nn.init.normal_(module.pos_emb, mean=0.0, std=0.02)
             for emb in module.cond_pos_embs.values():

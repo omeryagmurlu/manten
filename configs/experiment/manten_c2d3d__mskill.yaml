@@ -29,12 +29,12 @@ training:
 accelerator_init_trackers:
   init_kwargs:
     wandb:
-      tags: [mt_v2, manten_c2d3d, train_2d_only] # train_2d_only, train_3d_only, train_2d_and_3d
+      tags: [mt_v2, manten_c2d3d, train_3d_only] # train_2d_only, train_3d_only, train_2d_and_3d
 
 agent:
   agent:
     no_color_3d: True
-    train_modes: [2d]
+    train_modes: [3d]
     state_encoder:
       _target_: manten.agents.combined_manten_policy.manten_combined_policy.cat_all_encoder
       _partial_: True

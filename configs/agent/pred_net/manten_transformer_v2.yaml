@@ -7,7 +7,7 @@ p_drop_emb: 0.1
 causal_attn: False
 ff_mult: 4
 
-concat_cond_dims_into_one: True
+concat_cond_dims_into_one: False
 
 layer_kwargs:
   nhead: 12
