@@ -33,8 +33,10 @@ accelerator_init_trackers:
 
 agent:
   agent:
-    no_color_3d: True
+    no_color_3d: False
     train_modes: [3d]
+    pred_net:
+      n_cond_layers: 6
     state_encoder:
       _target_: manten.agents.combined_manten_policy.manten_combined_policy.cat_all_encoder
       _partial_: True
@@ -61,7 +63,7 @@ datamodule:
   _control_mode: pd_ee_delta_pose
   _rotation_transform: rotation_6d
 
-  _batch_size: 128
+  _batch_size: 112
   _train_target_iters: 10000
   _num_workers: 4
   _prefetch_factor: 2
