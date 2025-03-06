@@ -1,11 +1,10 @@
 defaults:
   - metric@agent.metric: combined_2d_3d_mse
   - pcd_encoder@agent.pcd_encoder: knn_group_encoder
-  # - pcd_encoder@agent.pcd_encoder: pointnext-s
-  - pred_net@agent.pred_net: ???
+  - pred_net@agent.pred_net: manten_transformer_v2
 
 agent:
-  _target_: manten.agents.combined_manten_policy.manten_combined_policy.MantenCombinedPolicy
+  _target_: manten.agents.combined.manten_policy.manten_combined_policy.MantenCombinedPolicy
   act_horizon: 8
   num_diffusion_iters: 100
   train_modes: ???

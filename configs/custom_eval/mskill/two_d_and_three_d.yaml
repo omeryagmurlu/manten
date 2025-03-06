@@ -1,0 +1,62 @@
+- _target_: manten_evaluation.maniskill2.lib.evaluation.ManiskillEvaluation
+  _partial_: True
+  agent_wrapper:
+    _target_: manten_evaluation.maniskill2.agent_wrappers.lddp.LDDPAgentWrapper
+    _partial_: True
+    obs_mode: ${datamodule._obs_mode}
+    state_modality_keys: ${datamodule._state_modality_keys}
+    rgb_modality_keys: ${datamodule._rgb_modality_keys}
+    rotation_transform: ${datamodule._rotation_transform}
+    meta_2d_3d_mask: 3d
+  name_extension: 3d
+  num_eval_episodes: 105
+  num_envs: 15
+  sim_backend: ${task_spec.sim_backend}
+  env_id: ${datamodule._task}
+  env_kwargs:
+    control_mode: ${datamodule._control_mode}
+    reward_mode: sparse
+    obs_mode: ${datamodule._obs_mode}
+    render_mode: rgb_array
+    # max_episode_steps: 300
+    max_episode_steps: 100
+  wrappers:
+    - _target_: manten_evaluation.maniskill2.lib.utils_wrapper_proxy.wrapper_proxy
+      _partial_: True
+      name: TreeFrameStack
+      num_stack: ${datamodule._obs_horizon}
+  action_executor:
+    _target_: manten_evaluation.maniskill2.lib.utils_wrapper_proxy.wrapper_proxy
+    name: HorizonActionExecutor
+  save_video: True
+- _target_: manten_evaluation.maniskill2.lib.evaluation.ManiskillEvaluation
+  _partial_: True
+  agent_wrapper:
+    _target_: manten_evaluation.maniskill2.agent_wrappers.lddp.LDDPAgentWrapper
+    _partial_: True
+    obs_mode: ${datamodule._obs_mode}
+    state_modality_keys: ${datamodule._state_modality_keys}
+    rgb_modality_keys: ${datamodule._rgb_modality_keys}
+    rotation_transform: ${datamodule._rotation_transform}
+    meta_2d_3d_mask: 2d
+  name_extension: 2d
+  num_eval_episodes: 105
+  num_envs: 15
+  sim_backend: ${task_spec.sim_backend}
+  env_id: ${datamodule._task}
+  env_kwargs:
+    control_mode: ${datamodule._control_mode}
+    reward_mode: sparse
+    obs_mode: ${datamodule._obs_mode}
+    render_mode: rgb_array
+    # max_episode_steps: 300
+    max_episode_steps: 100
+  wrappers:
+    - _target_: manten_evaluation.maniskill2.lib.utils_wrapper_proxy.wrapper_proxy
+      _partial_: True
+      name: TreeFrameStack
+      num_stack: ${datamodule._obs_horizon}
+  action_executor:
+    _target_: manten_evaluation.maniskill2.lib.utils_wrapper_proxy.wrapper_proxy
+    name: HorizonActionExecutor
+  save_video: True

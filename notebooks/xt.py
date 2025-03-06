@@ -5,7 +5,7 @@ import torch
 from torch import nn
 from x_transformers import Decoder, Encoder
 
-from manten.networks.manten_transformer_for_diffusion import (
+from manten.networks.transformer.manten_transformer_for_diffusion import (
     MantenTransformer,
     MantenTransformerWrapper,
 )

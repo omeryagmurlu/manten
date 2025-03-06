@@ -1,10 +1,10 @@
 # @package _global_
 
 defaults:
-  - /agent: tdda_c2d3d
+  - /agent: dp3
   - /datamodule: maniskill
   - /tasks/maniskill_tasks@task_spec: pick_cube_v1
-  - /custom_eval/mskill@custom_evaluator: two_d_and_three_d
+  - /custom_eval/mskill@custom_evaluator: three_d
 
 project_name: manten_maniskill_${task_spec.env_id}
 
@@ -19,14 +19,15 @@ training:
   eval_test:
     max_steps: 6
   custom_eval:
-    every_n_global_steps: 60000
+    every_n_global_steps: 10000000
     skip_first_global_steps: 0
 
-  # sanity_check: False
-  # log_train_timing: True
-  # resume_from_save: /home/i53/student/yagmurlu/code/manten/outputs/training/manten_maniskill_PickCube-v1/2025-01-13/02-44-03/accelerate/resume
+  sanity_check: False
 
-  # ema: null
+accelerator_init_trackers:
+  init_kwargs:
+    wandb:
+      tags: [dp3] # train_2d_only, train_3d_only, train_2d_and_3d
 
 _lr: 1.0e-4
 _weight_decay: 1.0e-6
@@ -49,15 +50,9 @@ datamodule:
   _control_mode: pd_ee_delta_pose
   _rotation_transform: rotation_6d
 
-  _batch_size: 256
+  _batch_size: 112
   _train_target_iters: 10000
   _num_workers: 4
   _prefetch_factor: 2
   # _load_count: 200
   _use_mmap: False
-
-agent:
-  agent:
-    act_horizon: 8
-    relative: True
-  _diffusion_timesteps: 100

@@ -1,6 +1,6 @@
 _diffusion_timesteps: ???
 agent:
-  _target_: manten.agents.td_diffuser_actor.three_dda_agent.ThreeDDAAgent
+  _target_: manten.agents.only_3d.td_diffuser_actor.three_dda_agent.ThreeDDAAgent
   position_noise_scheduler:
     _target_: diffusers.schedulers.DDPMScheduler
     num_train_timesteps: ${..._diffusion_timesteps}

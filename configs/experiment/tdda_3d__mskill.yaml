@@ -4,6 +4,7 @@ defaults:
   - /agent: tdda
   - /datamodule: maniskill
   - /tasks/maniskill_tasks@task_spec: pick_cube_v1
+  - /custom_eval/mskill@custom_evaluator: two_d
 
 project_name: manten_maniskill_${task_spec.env_id}
 
@@ -22,7 +23,7 @@ training:
     skip_first_global_steps: 0
 
   sanity_check: False
-  log_train_timing: True
+  # log_train_timing: True
   # resume_from_save: /home/i53/student/yagmurlu/code/manten/outputs/training/2024-12-24/18-59-50/accelerate/checkpoint_29
 
   # ema: null
@@ -60,32 +61,3 @@ agent:
     act_horizon: 8
     relative: True
   _diffusion_timesteps: 100
-
-custom_evaluator:
-  _target_: manten_evaluation.maniskill2.lib.evaluation.ManiskillEvaluation
-  _partial_: True
-  agent_wrapper:
-    _target_: manten_evaluation.maniskill2.agent_wrappers.lddp.LDDPAgentWrapper
-    _partial_: True
-    obs_mode: ${datamodule._obs_mode}
-    state_modality_keys: ${datamodule._state_modality_keys}
-    rgb_modality_keys: ${datamodule._rgb_modality_keys}
-    rotation_transform: ${datamodule._rotation_transform}
-  num_eval_episodes: 105
-  num_envs: 15
-  sim_backend: ${task_spec.sim_backend}
-  env_id: ${datamodule._task}
-  env_kwargs:
-    control_mode: ${datamodule._control_mode}
-    reward_mode: sparse
-    obs_mode: ${datamodule._obs_mode}
-    render_mode: rgb_array
-    # max_episode_steps: 300
-    max_episode_steps: 100
-  wrappers:
-    - _target_: manten_evaluation.maniskill2.lib.utils_wrappers.TreeFrameStack
-      _partial_: True
-      num_stack: ${datamodule._obs_horizon}
-  action_executor:
-    _target_: manten_evaluation.maniskill2.lib.utils_wrappers.HorizonActionExecutor
-  save_video: True
