@@ -1,2 +1,31 @@
+defaults:
+  - metric@agent.metric: mse_loss
+
 agent:
-  _target_: manten.agents.only_3d.td_diffusion_policy.dp3
+  _target_: manten.agents.only_3d.td_diffusion_policy.dp3.DP3Agent
+  state_encoder:
+      _target_: manten.networks.state_encoder.MLPEncoder
+      _partial_: True
+  noise_scheduler:
+    _target_: diffusers.schedulers.scheduling_ddim.DDIMScheduler
+    num_train_timesteps: 100
+    beta_start: 0.0001
+    beta_end: 0.02
+    beta_schedule: squaredcos_cap_v2
+    clip_sample: True
+    set_alpha_to_one: True
+    steps_offset: 0
+    prediction_type: sample
+
+  condition_type: film
+  act_horizon: 8
+  diffusion_step_embed_dim: 128
+  # down_dims: [256, 512, 1024]
+  down_dims: [512, 1024, 2048]
+
+  n_inference_steps: 10
+  pointcloud_encoder_cfg:
+    out_channels: 64
+    use_layernorm: True
+    final_norm: layernorm
+  use_pc_color: False

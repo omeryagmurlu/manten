@@ -1,4 +1,6 @@
 import logging
+from collections.abc import Callable
+from functools import partial
 
 import einops
 import optree
@@ -11,7 +13,10 @@ from manten.metrics.traj_action_metric import PosRotGripperMetric, PosRotGripper
 from manten.networks.vendor.diffusion_policy_3d.diffusion.conditional_unet1d import (
     ConditionalUnet1D,
 )
-from manten.networks.vendor.diffusion_policy_3d.vision.pointnet_extractor import DP3Encoder
+from manten.networks.vendor.diffusion_policy_3d.vision.pointnet_extractor import (
+    PointNetEncoderXYZ,
+    PointNetEncoderXYZRGB,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -27,7 +32,7 @@ class DP3Agent(
         return self.dataset_info["obs_horizon"]
 
     @property
-    def horizon(self):  # pred_horizon
+    def pred_horizon(self):
         return self.dataset_info["pred_horizon"]
 
     @property
@@ -36,10 +41,11 @@ class DP3Agent(
 
     def __init__(
         self,
-        shape_meta: dict,
+        state_encoder: Callable[..., torch.nn.Module],
         noise_scheduler: DDPMScheduler,
-        n_action_steps,  # prolly 8
-        num_inference_steps=None,
+        act_horizon,  # prolly 8
+        n_inference_steps=None,
+        # conditional unet parameters
         diffusion_step_embed_dim=256,
         down_dims=(256, 512, 1024),
         kernel_size=5,
@@ -48,59 +54,42 @@ class DP3Agent(
         use_down_condition=True,
         use_mid_condition=True,
         use_up_condition=True,
-        encoder_output_dim=256,
-        crop_shape=None,
+        # pcd encoder parameters
         use_pc_color=False,
         pointnet_type="pointnet",
         pointcloud_encoder_cfg=None,
-        # parameters passed to step
+        # rest
         **kwargs,
     ):
-        super().__init__()
+        super().__init__(**kwargs)
 
-        self.condition_type = condition_type
-
-        # parse shape_meta
-        action_shape = shape_meta["action"]["shape"]
-        self.action_shape = action_shape
-        if len(action_shape) == 1:
-            action_dim = action_shape[0]
-        elif len(action_shape) == 2:  # use multiple hands
-            action_dim = action_shape[0] * action_shape[1]
-        else:
-            raise NotImplementedError(f"Unsupported action shape {action_shape}")
-
-        # obs_shape_meta = shape_meta["obs"]
-        # obs_dict = dict_apply(obs_shape_meta, lambda x: x["shape"])
-
-        obs_encoder = DP3Encoder(
-            observation_space=obs_dict,
-            img_crop_shape=crop_shape,
-            out_channel=encoder_output_dim,
-            pointcloud_encoder_cfg=pointcloud_encoder_cfg,
-            use_pc_color=use_pc_color,
-            pointnet_type=pointnet_type,
+        self.state_encoder = state_encoder(
+            state_shape=optree.tree_map(lambda x: x[1:], self.observations_shape["state_obs"])
         )
-
-        # create diffusion model
-        obs_feature_dim = obs_encoder.output_shape()
-        input_dim = action_dim
-        if "cross_attention" in self.condition_type:
-            global_cond_dim = obs_feature_dim
-        else:
-            global_cond_dim = obs_feature_dim * self.obs_horizon
 
         self.use_pc_color = use_pc_color
-        self.pointnet_type = pointnet_type
-        logger.info(
-            f"[DiffusionUnetHybridPointcloudPolicy] use_pc_color: {self.use_pc_color}"
-        )
-        logger.info(
-            f"[DiffusionUnetHybridPointcloudPolicy] pointnet_type: {self.pointnet_type}"
-        )
+        if pointnet_type == "pointnet":
+            if use_pc_color:
+                self.pcd_encoder = PointNetEncoderXYZRGB(
+                    in_channels=6,
+                    **pointcloud_encoder_cfg,
+                )
+            else:
+                self.pcd_encoder = PointNetEncoderXYZ(
+                    in_channels=3,
+                    **pointcloud_encoder_cfg,
+                )
+        else:
+            raise NotImplementedError(f"pointnet_type: {pointnet_type}")
+
+        self.condition_type = condition_type
+        if "cross_attention" in self.condition_type:
+            global_cond_dim = self.encode_obs_out_dim
+        else:
+            global_cond_dim = self.encode_obs_out_dim * self.obs_horizon
 
         model = ConditionalUnet1D(
-            input_dim=input_dim,
+            input_dim=self.act_dim,
             local_cond_dim=None,
             global_cond_dim=global_cond_dim,
             diffusion_step_embed_dim=diffusion_step_embed_dim,
@@ -113,202 +102,167 @@ class DP3Agent(
             use_up_condition=use_up_condition,
         )
 
-        self.obs_encoder = obs_encoder
         self.model = model
         self.noise_scheduler = noise_scheduler
 
-        self.noise_scheduler_pc = copy.deepcopy(noise_scheduler)
+        self.act_horizon = act_horizon
 
-        self.normalizer = LinearNormalizer()
-        self.obs_feature_dim = obs_feature_dim
-        self.action_dim = action_dim
-        self.n_action_steps = n_action_steps
-        self.obs_as_global_cond = True
-        self.kwargs = kwargs
-
-        if num_inference_steps is None:
-            num_inference_steps = noise_scheduler.config.num_train_timesteps
-        self.num_inference_steps = num_inference_steps
-
-        print_params(self)
+        if n_inference_steps is None:
+            n_inference_steps = noise_scheduler.config.num_train_timesteps
+        self.n_inference_steps = n_inference_steps
 
     def compute_train_gt_and_pred(self, pcd_obs, rgb_obs, pcd_mask, state_obs, actions):
-        pass
+        # rgb_obs (B, obs_horizon, cam, C, H, W)
+        norm_action_seq = self.action_scaler.scale(actions)
+
+        B = actions.shape[0]
+        obs_cond = self.encode_obs(pcd_obs, rgb_obs, pcd_mask, state_obs)
+
+        # sample noise to add to actions
+        # only act_dim, no observation inpainting, tho maybe later joint acts?
+        noise = torch.randn(
+            (B, self.pred_horizon, self.act_dim), device=norm_action_seq.device
+        )
+
+        # sample a diffusion iteration for each data point
+        timesteps = torch.randint(
+            0,
+            self.noise_scheduler.config.num_train_timesteps,
+            (B,),
+            device=norm_action_seq.device,
+        ).long()
+
+        # add noise to the clean images(actions) according to the noise magnitude at each diffusion iteration
+        # (this is the forward diffusion process)
+        noisy_action_seq = self.noise_scheduler.add_noise(norm_action_seq, noise, timesteps)
+
+        # predict the noise residual
+        pred = self.model(noisy_action_seq, timesteps, global_cond=obs_cond)
+
+        pred_type = self.noise_scheduler.config.prediction_type
+        if pred_type == "epsilon":
+            return noise, pred
+        elif pred_type == "sample":
+            return norm_action_seq, pred
+        elif pred_type == "v_prediction":
+            # see: https://github.com/YanjieZe/3D-Diffusion-Policy/blob/c72a1ace81d1217f1e6450ca7a98fcd3b668c009/3D-Diffusion-Policy/diffusion_policy_3d/policy/dp3.py#L344
+            # https://github.com/huggingface/diffusers/blob/main/src/diffusers/schedulers/scheduling_dpmsolver_multistep.py
+            # https://github.com/huggingface/diffusers/blob/v0.11.1-patch/src/diffusers/schedulers/scheduling_dpmsolver_multistep.py
+            # sigma = self.noise_scheduler.sigmas[timesteps]
+            # alpha_t, sigma_t = self.noise_scheduler._sigma_to_alpha_sigma_t(sigma)
+            self.noise_scheduler.alpha_t = self.noise_scheduler.alpha_t.to(self.device)
+            self.noise_scheduler.sigma_t = self.noise_scheduler.sigma_t.to(self.device)
+            alpha_t, sigma_t = (
+                self.noise_scheduler.alpha_t[timesteps],
+                self.noise_scheduler.sigma_t[timesteps],
+            )
+            alpha_t = alpha_t.unsqueeze(-1).unsqueeze(-1)
+            sigma_t = sigma_t.unsqueeze(-1).unsqueeze(-1)
+            v_t = alpha_t * noise - sigma_t * norm_action_seq
+            return v_t, pred
+        else:
+            raise ValueError(f"Unsupported prediction type {pred_type}")
 
     def predict_actions(self, pcd_obs, rgb_obs, pcd_mask, state_obs):
-        pass
+        self.noise_scheduler.set_timesteps(self.n_inference_steps)
 
-    def adapt_actions_from_ds_actions(self, actions):
-        return actions[..., : self.n_action_steps, :]
+        _tmp = next(iter(rgb_obs.values()))
+        B = _tmp.shape[0]
+        device = _tmp.device
 
-    def encode_observations(self, pcd_obs, rgb_obs, pcd_mask, state_obs):
-        # n_cam = len(pcd_obs)
-        # B, obs_h, C, H, W = next(iter(pcd_obs.values())).shape
-        pcd_obs = einops.rearrange(
-            list(pcd_obs.values()), "cam b obs_h c h w -> b obs_h cam c h w"
-        )
-        pcd_mask = einops.rearrange(
-            list(pcd_mask.values()), "cam b obs_h c h w -> b obs_h cam c h w"
-        )
-        rgb_obs = einops.rearrange(
-            list(rgb_obs.values()), "cam b obs_h c h w -> b obs_h cam c h w"
-        )
-        curr_gripper = state_obs[self.tcp_pose_key]
-        custom_states = {key: state_obs[key] for key in self.encoder_custom_state_shapes}
+        with torch.no_grad():
+            obs_cond = self.encode_obs(pcd_obs, rgb_obs, pcd_mask, state_obs)
 
-        # position (3) normalization
-        curr_gripper = self.pcd_scaler.scale(curr_gripper[..., :3])
-        pcd_obs = self.pcd_scaler.scale(pcd_obs)
-        if "goal_pos" in custom_states:
-            custom_states["goal_pos"] = self.pcd_scaler.scale(custom_states["goal_pos"])
+            # initialize action from Gaussian noise
+            noisy_action_seq = torch.randn(
+                (B, self.pred_horizon, self.act_dim), device=device
+            )
 
-        if self.relative:
-            if "goal_pos" not in custom_states:
-                pcd_obs, curr_gripper = convert2rel(pcd_obs, curr_gripper)
-            else:
-                pcd_obs, curr_gripper, custom_states["goal_pos"] = convert2rel(
-                    pcd_obs, curr_gripper, custom_states["goal_pos"]
+            for k in self.noise_scheduler.timesteps:
+                # predict noise
+                pred = self.model(
+                    sample=noisy_action_seq,
+                    timestep=k,
+                    global_cond=obs_cond,
                 )
 
-        # for now only use last observation for visuals like in the paper
-        pcd_obs = pcd_obs[:, -1]
-        pcd_mask = pcd_mask[:, -1]
-        rgb_obs = rgb_obs[:, -1]
+                # inverse diffusion step (remove noise)
+                noisy_action_seq = self.noise_scheduler.step(
+                    model_output=pred,
+                    timestep=k,
+                    sample=noisy_action_seq,
+                ).prev_sample
 
-        # Compute visual features/positional embeddings at different scales
-        rgb_feats_pyramid, pcd_pyramid, mask_pyramid = self.encoder.encode_images(
-            rgb_obs, pcd_obs, pcd_mask
-        )
-        # Keep only low-res scale
-        context_feats = rgb_feats_pyramid[0]
-        context = einops.rearrange(pcd_pyramid[0], "bt ncam c h w -> bt (ncam h w) c")
-        context_keep_mask = mask_pyramid[0]
+        noisy_action_seq = self.action_scaler.descale(noisy_action_seq)
 
-        context_pe = self.encoder.relative_pe_layer(context)
+        # only take act_horizon number of actions
+        start = self.obs_horizon - 1
+        end = start + self.act_horizon
+        return noisy_action_seq[:, start:end]  # (B, act_horizon, act_dim)
 
-        # # Encode instruction (B, 53, F)
-        # instr_feats = None
-        # # instr will be part of state_obs, first 10 dim tcp_pose
-        # # if self.use_instruction:
-        # #     instr_feats, _ = self.encoder.encode_instruction(instruction)
-        # #     # Attention from vision to language
-        # #     context_feats = self.encoder.vision_language_attention(context_feats, instr_feats)
-        instr_feats = self.encoder.encode_custom_states(custom_states)
+    def adapt_actions_from_ds_actions(self, actions):
+        return actions[..., : self.act_horizon, :]
 
-        # Encode gripper history (B, nhist, F)
-        adaln_gripper_feats, _ = self.encoder.encode_curr_gripper(
-            curr_gripper, context_feats, context
+    def encode_obs(self, pcd_obs, rgb_obs, pcd_mask, state_obs):
+        B = next(iter(rgb_obs.values())).shape[0]
+
+        state_features = self.state_encoder(
+            optree.tree_map(lambda x: einops.rearrange(x, "b t ... -> (b t) ..."), state_obs)
         )
 
-        # FPS on visual features (N, B, F) and (B, N, F, 2)
-        fps_feats, fps_pos = self.encoder.run_fps(
-            context_feats.transpose(0, 1),
-            context_pe,
-            keep_mask=context_keep_mask.transpose(0, 1),
+        pcd_obs = einops.rearrange(
+            list(pcd_obs.values()), "cam b obs_h c h w -> b obs_h (cam h w) c"
         )
-        return {
-            "context_feats": context_feats,
-            "context": context_pe,  # contextualized visual features
-            "instr_feats": instr_feats,  # language features
-            "adaln_gripper_feats": adaln_gripper_feats,  # gripper history features
-            "fps_feats": fps_feats,
-            "fps_pos": fps_pos,  # sampled visual features
-        }
+        pcd_mask = einops.rearrange(
+            list(pcd_mask.values()), "cam b obs_h c h w -> b obs_h (cam h w) c"
+        )
 
+        pcd_obs = self.pcd_scaler.scale(pcd_obs)
 
-if __name__ == "__main__":
-    from functools import partial
+        if self.use_pc_color:
+            rgb_obs = einops.rearrange(
+                list(rgb_obs.values()), "cam b obs_h c h w -> b obs_h (cam h w) c"
+            )
+            pointcloud = torch.cat([pcd_obs, rgb_obs], dim=-1)
+        else:
+            pointcloud = pcd_obs
 
-    from diffusers.schedulers import DDPMScheduler
+        # apply mask:
+        pointcloud = pointcloud * pcd_mask  # keep 1s, zero out 0s
 
-    from manten.agents.utils.normalization import MinMaxScaler
-    from manten.data.dataset_maniskill import ManiSkillDataset
-    from manten.metrics.mse_loss_pose_bce_loss_gripper_metric import (
-        MSELossPoseBCEWithLogitsLossGripperMetric,
-    )
-    from manten.networks.vendor.three_dda.encoder import Encoder
-    from manten.networks.vendor.three_dda.head import DiffusionHead
+        pointcloud = einops.rearrange(pointcloud, "b obs_h n c -> (b obs_h) n c")
+        pcd_features = self.pcd_encoder(pointcloud)
+        combined_features = torch.cat([pcd_features, state_features], dim=-1)
+        if "cross_attention" in self.condition_type:
+            # treat as a sequence
+            global_cond = einops.rearrange(
+                combined_features, "(b t) ... -> b t ...", b=B, t=self.obs_horizon
+            )
+        else:
+            # reshape back to B, Do
+            global_cond = einops.rearrange(
+                combined_features, "(b t) ... -> b (t ...)", b=B, t=self.obs_horizon
+            )
 
-    dataset = ManiSkillDataset(
-        simulated_length=10000000,
-        test_ratio=0.05,
-        task="PickCube-v1",
-        pack_root="/home/i53/student/yagmurlu/code/manten/data/maniskill2/packed_demos",
-        obs_horizon=2,
-        pred_horizon=16,
-        obs_mode="pointcloud",
-        # state_modality_keys=["tcp_pose"],
-        state_modality_keys=["tcp_pose", "goal_pos"],
-        # rgb_modality_keys=["camera1", "gripper1"],
-        rgb_modality_keys=["camera1"],
-        control_mode="pd_ee_delta_pose",
-        use_mmap=True,
-        load_count=3,
-        rotation_transform="rotation_6d",
-        # use_mmap=False,
-    )
+        return global_cond
 
-    dataset_info = dataset.get_dataset_info()
+    @property
+    def encode_obs_out_dim(self):
+        if hasattr(self, "_encode_obs_out_dim_cached"):
+            return self._encode_obs_out_dim_cached
 
-    ddpm = partial(DDPMScheduler, num_train_timesteps=125, beta_schedule="squaredcos_cap_v2")
+        self.to(self.device)
+        with torch.no_grad():
+            sample_observation = optree.tree_map(
+                lambda x: torch.zeros((1, *x), device=self.device), self.observations_shape
+            )
 
-    #   encoder:
-    #     _target_: manten.agents.three_dda.encoder.Encoder
-    #     backbone: "clip"
-    #     image_size: [256, 256]
-    #     embedding_dim: ${..._embedding_dim}
-    #     num_sampling_level: 1
-    #     nhist: ${..._num_history}
-    #     num_vis_ins_attn_layers: 2
-    #     fps_subsampling_factor: 3
-    #     encoder = Encoder()
+            sample_obs_cond = self.encode_obs(
+                sample_observation["pcd_obs"],
+                sample_observation["rgb_obs"],
+                optree.tree_map(lambda x: ~x.bool(), sample_observation["pcd_mask"]),
+                sample_observation["state_obs"],
+            )
 
-    encoder = partial(
-        Encoder,
-        backbone="clip",
-        num_sampling_level=1,
-        num_vis_ins_attn_layers=2,
-        fps_subsampling_factor=3,
-    )
-
-    #   noise_model:
-    # _target_: manten.agents.three_dda.head.DiffusionHead
-    # embedding_dim: ${..._embedding_dim}
-    # use_instruction: True
-    # nhist: ${..._num_history}
-    # lang_enhanced: True
-    # rotation_parametrization: ${..._rotation_parametrization}
-
-    noise_model = partial(
-        DiffusionHead,
-        # use_instruction=False,
-        # lang_enhanced=False,
-        use_instruction=True,
-        lang_enhanced=True,
-    )
-
-    agent = DP3Agent(
-        dataset_info=dataset_info,
-        position_noise_scheduler=ddpm(),
-        rotation_noise_scheduler=ddpm(),
-        encoder=encoder,
-        metric=MSELossPoseBCEWithLogitsLossGripperMetric(),
-        noise_model=noise_model,
-        action_scaler=MinMaxScaler,
-        relative=True,
-        n_inference_steps=10,
-    )
-    agent.to("cuda")  # flash-attn not implemented for cpu
-
-    dl = torch.utils.data.DataLoader(dataset, batch_size=32, shuffle=False)
-
-    it = iter(dl)
-    batch = next(it)
-    batch = optree.tree_map(lambda x: x.to("cuda"), batch)
-
-    agent("train", batch)
-    agent("eval", batch)
-
-    actions = agent.predict_actions(observations=batch["observations"])
-    print(actions.shape)
-    print(actions)
+        self._encode_obs_out_dim_cached = sample_obs_cond.shape[-1]
+        return self.encode_obs_out_dim

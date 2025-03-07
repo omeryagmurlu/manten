@@ -40,7 +40,7 @@ def make_eval_envs(  # noqa: C901
 
     if sim_backend == "cpu":
 
-        def cpu_make_env(env_id, seed, video_dir=None, env_kwargs=None):  # noqa: ARG001
+        def cpu_make_env(env_id, seed, video_dir=None, env_kwargs=None):
             if env_kwargs is None:
                 env_kwargs = {}
 

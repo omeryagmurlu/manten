@@ -22,12 +22,15 @@ training:
     every_n_global_steps: 10000000
     skip_first_global_steps: 0
 
-  sanity_check: False
-
 accelerator_init_trackers:
   init_kwargs:
     wandb:
       tags: [dp3] # train_2d_only, train_3d_only, train_2d_and_3d
+
+agent:
+  agent:
+    state_encoder:
+      excluded_keys: ["tcp_pose"]
 
 _lr: 1.0e-4
 _weight_decay: 1.0e-6
