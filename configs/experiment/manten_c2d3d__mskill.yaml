@@ -15,9 +15,9 @@ training:
   num_global_steps: 120000
   vis_metric_key: "pos_l2"
   eval_train:
-    max_steps: 6
+    max_steps: 2
   eval_test:
-    max_steps: 6
+    max_steps: 2
   custom_eval:
     every_n_global_steps: 10000000
     skip_first_global_steps: 0
@@ -62,7 +62,7 @@ datamodule:
   _control_mode: pd_ee_delta_pose
   _rotation_transform: rotation_6d
 
-  _batch_size: 64
+  _batch_size: 96
   _train_target_iters: 10000
   _num_workers: 4
   _prefetch_factor: 2
