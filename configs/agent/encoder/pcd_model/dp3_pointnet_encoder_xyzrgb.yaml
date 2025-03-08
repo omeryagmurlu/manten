@@ -1,0 +1,5 @@
+_target_: manten.networks.encoder.pcd_model.dp3_pointnet_encoder.DP3PointNetEncoderXYZRGB
+_partial_: true
+out_channels: 1024
+use_layernorm: True
+final_norm: layernorm

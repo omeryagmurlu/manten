@@ -4,8 +4,8 @@ defaults:
 agent:
   _target_: manten.agents.only_3d.td_diffusion_policy.dp3.DP3Agent
   state_encoder:
-      _target_: manten.networks.state_encoder.MLPEncoder
-      _partial_: True
+    _target_: manten.networks.encoder.state_encoder.MLPEncoder
+    _partial_: True
   noise_scheduler:
     _target_: diffusers.schedulers.scheduling_ddim.DDIMScheduler
     num_train_timesteps: 100

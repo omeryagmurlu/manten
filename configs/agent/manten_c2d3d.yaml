@@ -1,7 +1,7 @@
 defaults:
   - metric@agent.metric: combined_2d_3d_mse
-  - pcd_encoder@agent.pcd_encoder: knn_group_encoder
   - pred_net@agent.pred_net: manten_transformer_v2
+  - encoder@agent.encoder: manten_encoder
 
 agent:
   _target_: manten.agents.combined.manten_policy.manten_combined_policy.MantenCombinedPolicy
@@ -17,17 +17,3 @@ agent:
     _partial_: true
     min_value: -0.95
     max_value: 0.95
-  rgb_encoder:
-    _target_: manten.networks.vendor.diffusion_policy.vision.multi_image_obs_encoder.MultiImageObsEncoder
-    _partial_: True
-    rgb_model:
-      _target_: manten.networks.vendor.diffusion_policy.vision.model_getter.get_resnet
-      name: resnet18
-      weights: null
-    resize_shape: null
-    crop_shape: [76, 76]
-    # constant center crop
-    random_crop: True
-    use_group_norm: True
-    share_rgb_model: False
-    imagenet_norm: True

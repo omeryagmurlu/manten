@@ -1,0 +1,33 @@
+defaults:
+  - state_model@state_encoder: mlp_encoder
+  - pcd_model@pcd_encoder.pcd_model: dp3_pointnet_encoder_xyzrgb
+
+_target_: manten.networks.encoder.manten_encoder.MantenEncoder
+_partial_: true
+rgb_encoder:
+  _target_: manten.networks.encoder.manten_rgb_encoder.MantenRGBEncoder
+  _partial_: true
+  rgb_model:
+    _target_: manten.networks.encoder.rgb_model.modified_resnet.ModifiedResNet18
+    _partial_: true
+    norm_layer: group_norm
+    return_intermediates: True
+  share_model: False
+  transform_kwargs:
+    resize: null
+    crop: [76, 76]
+    crop_type: random
+    imagenet_norm: True
+  select_local_feature: "layer4"
+  combine_cameras: stack_after_batch
+pcd_encoder:
+  _target_: manten.networks.encoder.manten_pcd_encoder.MantenPCDEncoder
+  _partial_: true
+  use_color_in_pcd: True
+  use_mask_in_pcd: True
+  use_pcd_grouper: True
+  pcd_grouper_kwargs:
+    num_groups: 64
+    group_size: 64
+    knn: True
+    radius: null

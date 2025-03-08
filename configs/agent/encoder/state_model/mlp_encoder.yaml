@@ -1,0 +1,7 @@
+_target_: manten.networks.encoder.state_encoder.MLPEncoder
+_partial_: true
+hidden_dims: [64]
+output_dim: 64
+activation:
+  _target_: torch.nn.ReLU
+  _partial_: true

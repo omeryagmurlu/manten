@@ -1,0 +1,2 @@
+_target_: manten.networks.encoder.pcd_model.sugar_pc_group_encoder.SugarPCGroupEncoder
+output_size: 512

@@ -28,18 +28,18 @@ training:
 accelerator_init_trackers:
   init_kwargs:
     wandb:
-      tags: [mt_v2, manten_c2d3d, train_3d_only] # train_2d_only, train_3d_only, train_2d_and_3d
+      tags: [mt_v2, manten_c2d3d, train_2d_and_3d] # train_2d_only, train_3d_only, train_2d_and_3d
 
 agent:
   agent:
-    no_color_3d: False
-    train_modes: [3d]
+    train_modes: [2d, 3d]
+    include_rgb_cond_in_3d: True
     pred_net:
       n_cond_layers: 6
-    state_encoder:
-      _target_: manten.networks.state_encoder.cat_all_encoder
-      _partial_: True
-      excluded_keys: ["tcp_pose"]
+    # state_encoder:
+    #   _target_: manten.networks.state_encoder.cat_all_encoder
+    #   _partial_: True
+    #   excluded_keys: ["tcp_pose"]
 
 _lr: 1.0e-4
 _weight_decay: 1.0e-6
@@ -56,13 +56,13 @@ datamodule:
   _state_modality_keys: ${task_spec.state_modality_keys_with_tcp_pose}
   _rgb_modality_keys: ${task_spec.rgb_modality_keys}
   _pack_root: /home/i53/student/yagmurlu/code/manten/data/maniskill2/packed_demos
-  _obs_horizon: 1
+  _obs_horizon: 2
   _pred_horizon: 16
   _obs_mode: pointcloud
   _control_mode: pd_ee_delta_pose
   _rotation_transform: rotation_6d
 
-  _batch_size: 112
+  _batch_size: 64
   _train_target_iters: 10000
   _num_workers: 4
   _prefetch_factor: 2
