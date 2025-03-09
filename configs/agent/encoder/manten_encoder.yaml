@@ -18,7 +18,7 @@ rgb_encoder:
     crop: [76, 76]
     crop_type: random
     imagenet_norm: True
-  select_local_feature: "layer4"
+  select_local_feature: "layer3"
   combine_cameras: stack_after_batch
 pcd_encoder:
   _target_: manten.networks.encoder.manten_pcd_encoder.MantenPCDEncoder
@@ -28,6 +28,6 @@ pcd_encoder:
   use_pcd_grouper: True
   pcd_grouper_kwargs:
     num_groups: 64
-    group_size: 64
+    group_size: 196
     knn: True
     radius: null

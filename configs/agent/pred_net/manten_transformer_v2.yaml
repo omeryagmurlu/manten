@@ -4,7 +4,7 @@ n_layer: 12
 n_cond_layers: ??? # use a simple linear layer to condition the decoder
 n_emb: 768
 p_drop_emb: 0.1
-causal_attn: False
+# causal_attn: False
 ff_mult: 4
 
 concat_cond_dims_into_one: False

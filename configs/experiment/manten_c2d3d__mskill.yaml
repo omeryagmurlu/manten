@@ -56,7 +56,7 @@ datamodule:
   _state_modality_keys: ${task_spec.state_modality_keys_with_tcp_pose}
   _rgb_modality_keys: ${task_spec.rgb_modality_keys}
   _pack_root: /home/i53/student/yagmurlu/code/manten/data/maniskill2/packed_demos
-  _obs_horizon: 2
+  _obs_horizon: 1
   _pred_horizon: 16
   _obs_mode: pointcloud
   _control_mode: pd_ee_delta_pose
