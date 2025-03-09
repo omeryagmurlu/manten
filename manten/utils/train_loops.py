@@ -1,4 +1,3 @@
-import gc
 import shutil
 from collections import deque
 from collections.abc import Callable
@@ -124,7 +123,8 @@ class TrainLoops:
                 self.agent.eval()
                 self.custom_evaluation()
                 if self.ema:
-                    self.custom_evaluation(use_ema=True)
+                    with self.ema.context_manager(self.agent):
+                        self.custom_evaluation(proc_name_suffix="ema")
             logger.info("custom evaluation finished, exiting")
             return
 
@@ -146,7 +146,8 @@ class TrainLoops:
                 self.agent.eval()
                 self.trigger_validation()
                 if self.ema:
-                    self.trigger_validation(use_ema=True)
+                    with self.ema.context_manager(self.agent):
+                        self.trigger_validation(proc_name_suffix="ema")
 
             self.state.epoch += 1
         logger.info("training finished, trained for %d epochs", self.state.epoch)
@@ -207,7 +208,7 @@ class TrainLoops:
                 }
                 progress.set_postfix(**overview_logs)
 
-            # TODO: for now just log main process metrics for performance reasons
+            # ~for now~ just log main process metrics for performance reasons
             # accelerate already has @on_main_process deco on trackers, so this here
             # is mostly redundant, it only prevents agent.metrics() from being called
             # on non-main processes at all
@@ -230,12 +231,13 @@ class TrainLoops:
         return sum(train_epoch_losses) / len(train_epoch_losses), loss
 
     @torch.inference_mode()
-    def validation_loop(self, *, use_ema=False) -> None:
-        agent = self.agent if not use_ema else self.ema.agent
-        proc_name = f"validate{'-ema' if use_ema else ''}"
+    def validation_loop(self, *, proc_name_suffix=None) -> None:
+        proc_name = "validate"
+        if proc_name_suffix:
+            proc_name = f"{proc_name}-{proc_name_suffix}"
 
         self.log_aggregator.reset()
-        agent.eval()
+        self.agent.eval()
         for step, batch in enumerate(
             progress := progbar(
                 self.test_dl,
@@ -248,7 +250,7 @@ class TrainLoops:
                 progress.close()
                 break
 
-            metric = self.validation_step(batch, agent)
+            metric = self.validation_step(batch, self.agent)
 
             progress.set_postfix(**metric.summary_metrics())
             self.log_aggregator.log(metric)
@@ -265,12 +267,13 @@ class TrainLoops:
         self.log_aggregator.reset()
 
     @torch.inference_mode()
-    def evaluation_loop(self, dataloader, max_steps, split, *, use_ema=False) -> None:
-        agent = self.agent if not use_ema else self.ema.agent
-        proc_name = f"eval-{split}{'-ema' if use_ema else ''}"
+    def evaluation_loop(self, dataloader, max_steps, split, *, proc_name_suffix=None) -> None:
+        proc_name = f"eval-{split}"
+        if proc_name_suffix:
+            proc_name = f"{proc_name}-{proc_name_suffix}"
 
         self.log_aggregator.reset()
-        agent.eval()
+        self.agent.eval()
         for step, batch in enumerate(
             progress := progbar(
                 dataloader,
@@ -283,7 +286,7 @@ class TrainLoops:
                 progress.close()
                 break
 
-            metric, trajectory = self.evaluation_step(batch, agent)
+            metric, trajectory = self.evaluation_step(batch, self.agent)
 
             progress.set_postfix(**metric.summary_metrics())
             self.log_aggregator.log(metric)
@@ -299,7 +302,7 @@ class TrainLoops:
         self.log_aggregator.reset()
 
     @torch.inference_mode()
-    def custom_evaluation(self, *, use_ema=False) -> None:
+    def custom_evaluation(self, *, proc_name_suffix=None) -> None:
         if not (
             self.custom_evaluator
             and hasattr(self.cfg, "custom_eval")
@@ -315,7 +318,10 @@ class TrainLoops:
             )
 
             for idx, custom_evaluator in enumerate(custom_evaluators):
-                proc_name = f"custom_eval{'-ema' if use_ema else ''}-{idx}"
+                proc_name = "custom_eval"
+                if proc_name_suffix:
+                    proc_name = f"{proc_name}-{proc_name_suffix}"
+                proc_name = f"{proc_name}-{idx}"
 
                 if callable(custom_evaluator):
                     custom_eval = custom_evaluator(
@@ -327,9 +333,8 @@ class TrainLoops:
 
                 logger.info("%s@epoch:%d", proc_name, self.state.epoch)
                 with torch.no_grad():  # just double checking lol
-                    agent = self.agent if not use_ema else self.ema.agent
-                    agent.eval()
-                    agent = self.accelerator.unwrap_model(agent)
+                    self.agent.eval()
+                    agent = self.accelerator.unwrap_model(self.agent)
                     agent.eval()
                     eval_infos, rich_media = custom_eval.evaluate(agent)
 
@@ -396,7 +401,7 @@ class TrainLoops:
             self.lr_scheduler.step()
             self.optimizer.zero_grad()
             if self.ema:
-                self.ema.manager.step(self.agent.parameters())
+                self.ema.step(self.agent)
 
         if self.log_train_timing:
             self.log_train_timing.before_step_end()
@@ -422,7 +427,7 @@ class TrainLoops:
 
         self.accelerator.load_state(checkpoint_to_load)
 
-        # TODO: fix this
+        # OLDTODO: fix this (I dunno what the problem is anymore)
         if self.ema:
             self.ema.manager.shadow_params = [
                 param.to(self.accelerator.device) for param in self.agent.parameters()
@@ -456,9 +461,10 @@ class TrainLoops:
             self.accelerator, self.agent, f"{checkpoint_path}/model.safetensors"
         )
         if self.ema:
-            save_model_to_safetensors(
-                self.accelerator, self.ema.agent, f"{checkpoint_path}/ema_model.safetensors"
-            )
+            with self.ema.context_manager(self.agent):
+                save_model_to_safetensors(
+                    self.accelerator, self.agent, f"{checkpoint_path}/ema_model.safetensors"
+                )
         if self.accelerator.is_main_process:
             # keep non-accelerate ops on main process only
             save_agent_config(checkpoint_path, self.whole_cfg.agent.agent)
@@ -478,7 +484,9 @@ class TrainLoops:
                     best_checkpoint_path,
                 )
 
-            last_path = Path(self.accelerator.project_dir).parent.parent.parent / "last_training"
+            last_path = (
+                Path(self.accelerator.project_dir).parent.parent.parent / "last_training"
+            )
             last_path.unlink(missing_ok=True)
             last_path.symlink_to(Path(self.accelerator.project_dir).parent)
 
@@ -528,10 +536,12 @@ class TrainLoops:
         )
 
     def free_memory(self):
-        self.accelerator.wait_for_everyone()
-        gc.collect()
-        torch.cuda.empty_cache()
-        gc.collect()
-        torch.cuda.empty_cache()
-        gc.collect()
-        self.accelerator.wait_for_everyone()
+        # for whatever crazy reason, this increases memory usage, not decrease it!
+        pass
+        # self.accelerator.wait_for_everyone()
+        # gc.collect()
+        # torch.cuda.empty_cache()
+        # gc.collect()
+        # torch.cuda.empty_cache()
+        # gc.collect()
+        # self.accelerator.wait_for_everyone()

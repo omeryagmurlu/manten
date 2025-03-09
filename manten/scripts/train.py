@@ -7,7 +7,7 @@ from manten.utils.utils_root import root
 logger = get_logger(__name__)
 
 
-def setup(cfg):  # noqa: PLR0915
+def setup(cfg):  # noqa: C901, PLR0915
     import os
     from pathlib import Path
 
@@ -91,7 +91,6 @@ def setup(cfg):  # noqa: PLR0915
 
         ema = EMA(
             manager=hydra.utils.instantiate(cfg.training.ema, parameters=agent.parameters()),
-            agent=hydra.utils.instantiate(cfg.agent.agent),
             accelerator=accelerator,
         )
     else:
