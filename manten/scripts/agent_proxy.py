@@ -81,7 +81,7 @@ class AgentHandler(BaseHTTPRequestHandler):
                 allocated = memory_stats.get("allocated_bytes.all.current", 0) / (1024**3)
                 reserved = memory_stats.get("reserved_bytes.all.current", 0) / (1024**3)
                 logger.info(
-                    f"GPU {i} Memory: Allocated: {allocated:.2f}GB, Reserved: {reserved:.2f}GB"  # noqa: G004
+                    f"GPU {i} Memory: Allocated: {allocated:.2f}GB, Reserved: {reserved:.2f}GB"
                 )
 
 
@@ -89,7 +89,7 @@ def start_server(create_agent, host="localhost", port=6000):
     AgentHandler.create_agent = create_agent
     AgentHandler.agent = None
     server = HTTPServer((host, port), AgentHandler)
-    logger.info(f"starting server at http://{host}:{port}")  # noqa: G004
+    logger.info(f"starting server at http://{host}:{port}")
     try:
         server.serve_forever()
     except KeyboardInterrupt:

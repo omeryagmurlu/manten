@@ -11,12 +11,13 @@ class DP3PointNetEncoderXYZRGB(nn.Module):
 
     def __init__(
         self,
+        *,
         in_channels: int,
         out_channels: int = 1024,
         use_layernorm: bool = False,
         final_norm: str = "none",
-        use_projection: bool = True,
-        **kwargs,
+        use_projection: bool = True,  # noqa: ARG002
+        # **kwargs,
     ):
         """_summary_
 
@@ -65,12 +66,13 @@ class DP3PointNetEncoderXYZ(nn.Module):
 
     def __init__(
         self,
+        *,
         in_channels: int = 3,
         out_channels: int = 1024,
         use_layernorm: bool = False,
         final_norm: str = "none",
         use_projection: bool = True,
-        **kwargs,
+        # **kwargs,
     ):
         """_summary_
 
@@ -130,23 +132,23 @@ class DP3PointNetEncoderXYZ(nn.Module):
         x = self.final_projection(x)
         return x
 
-    def save_gradient(self, module, grad_input, grad_output):
-        """
-        for grad-cam
-        """
-        self.gradient = grad_output[0]
+    # def save_gradient(self, module, grad_input, grad_output):
+    #     """
+    #     for grad-cam
+    #     """
+    #     self.gradient = grad_output[0]
 
-    def save_feature(self, module, input, output):
-        """
-        for grad-cam
-        """
-        if isinstance(output, tuple):
-            self.feature = output[0].detach()
-        else:
-            self.feature = output.detach()
+    # def save_feature(self, module, input, output):
+    #     """
+    #     for grad-cam
+    #     """
+    #     if isinstance(output, tuple):
+    #         self.feature = output[0].detach()
+    #     else:
+    #         self.feature = output.detach()
 
-    def save_input(self, module, input, output):
-        """
-        for grad-cam
-        """
-        self.input_pointcloud = input[0].detach()
+    # def save_input(self, module, input, output):
+    #     """
+    #     for grad-cam
+    #     """
+    #     self.input_pointcloud = input[0].detach()

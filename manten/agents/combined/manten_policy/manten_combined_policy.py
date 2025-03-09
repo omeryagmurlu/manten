@@ -1,7 +1,6 @@
 from collections.abc import Callable
 from functools import partial
 
-import einops
 import optree
 import torch
 
@@ -11,8 +10,6 @@ from manten.metrics.traj_action_metric import PosRotGripperMetric, PosRotGripper
 from manten.networks.vendor.diffusion_policy.vision.multi_image_obs_encoder import (
     MultiImageObsEncoder,
 )
-from manten.utils.utils_pytorch import get_ones_shape_like
-from manten.utils.utils_pytree import tree_rearrange
 
 
 @BatchPCDOrRGBObservationActionAgentTemplate.make_agent(
@@ -212,7 +209,7 @@ class MantenCombinedPolicy(
         return actions[..., : self.act_horizon, :]
 
     def encode_obs(self, pcd_obs, rgb_obs, pcd_mask, state_obs):
-        B = next(iter(rgb_obs.values())).shape[0]
+        # B = next(iter(rgb_obs.values())).shape[0]
 
         state_cond, global_rgb_cond, local_rgb_cond, pcd_cond = self.encoder(
             pcd_obs=pcd_obs, rgb_obs=rgb_obs, pcd_mask=pcd_mask, state_obs=state_obs
@@ -324,7 +321,7 @@ if __name__ == "__main__":
     print(dataset_info)
 
     pred_net = partial(
-        TransformerForDiffusion,
+        # TransformerForDiffusion,
         # diffusion_step_embed_dim=256,
         # unet_dims=(256, 512, 1024),
         # n_groups=8,

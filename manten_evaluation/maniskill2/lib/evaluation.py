@@ -119,9 +119,9 @@ def evaluate_via_agent(  # noqa: C901
         obs, rew, terminated, truncated, info = aex.execute_action_in_env(action_seq, envs)
 
         if truncated.any():
-            assert truncated.all() == truncated.any(), (
-                "all episodes should truncate at the same time for fair evaluation with other algorithms"
-            )
+            assert (
+                truncated.all() == truncated.any()
+            ), "all episodes should truncate at the same time for fair evaluation with other algorithms"
             if isinstance(info["final_info"], dict):
                 for k, v in info["final_info"]["episode"].items():
                     eval_metrics[k].append(v.float().cpu().numpy())

@@ -131,6 +131,7 @@ class MantenRGBEncoder(nn.Module):
             # cross attention with: seq_len learnable params as query, no positional encoding, key value from input
             raise NotImplementedError("Cross attention not implemented yet")
         if self.combine_cameras == "op_channels":
+            print(f"op_last_dim_operation: {op_last_dim_operation}")
             raise NotImplementedError("Operation on last dim not implemented yet")
 
     def forward(self, rgb_obs):
@@ -173,38 +174,10 @@ class MantenRGBEncoder(nn.Module):
 
     def forward_combine(self, rgb_features):
         if "global" in self.combine_features:
-            global_features = einops.rearrange(
-                [v[0] for v in rgb_features.values()], "cam b ... -> b cam ..."
-            )
-            if self.combine_cameras == "concat_channels":
-                global_features = einops.rearrange(global_features, "b cam d -> b 1 (cam d)")
-            elif self.combine_cameras == "stack_after_batch":
-                pass
-            else:
-                raise NotImplementedError
+            global_features = self.combine_global_features(rgb_features)
 
         if "local" in self.combine_features:
-            local_features = {
-                k: einops.rearrange(v, "cam b c ... -> b cam (...) c")
-                for k, v in transpose_array_of_dicts(
-                    [v[1] for v in rgb_features.values()]
-                ).items()
-            }
-            if self.combine_cameras == "concat_channels":
-                local_features = {
-                    k: einops.rearrange(v, "b cam n d -> b n (cam d)")
-                    for k, v in local_features.items()
-                }
-            elif self.combine_cameras == "stack_after_batch":
-                local_features = {
-                    k: einops.rearrange(v, "b cam n d -> b (cam n) d")
-                    for k, v in local_features.items()
-                }
-            else:
-                raise NotImplementedError
-
-            if self.select_local_feature is not None:
-                local_features = local_features[self.select_local_feature]
+            local_features = self.combine_local_features(rgb_features)
 
         if self.combine_features == "global_only":
             return global_features, None
@@ -214,3 +187,41 @@ class MantenRGBEncoder(nn.Module):
             return global_features, local_features
 
         raise ValueError("Invalid combine_features value")
+
+    def combine_global_features(self, rgb_features):
+        global_features = einops.rearrange(
+            [v[0] for v in rgb_features.values()], "cam b ... -> b cam ..."
+        )
+        if self.combine_cameras == "concat_channels":
+            global_features = einops.rearrange(global_features, "b cam d -> b 1 (cam d)")
+        elif self.combine_cameras == "stack_after_batch":
+            pass
+        else:
+            raise NotImplementedError
+
+        return global_features
+
+    def combine_local_features(self, rgb_features):
+        local_features = {
+            k: einops.rearrange(v, "cam b c ... -> b cam (...) c")
+            for k, v in transpose_array_of_dicts(
+                [v[1] for v in rgb_features.values()]
+            ).items()
+        }
+        if self.combine_cameras == "concat_channels":
+            local_features = {
+                k: einops.rearrange(v, "b cam n d -> b n (cam d)")
+                for k, v in local_features.items()
+            }
+        elif self.combine_cameras == "stack_after_batch":
+            local_features = {
+                k: einops.rearrange(v, "b cam n d -> b (cam n) d")
+                for k, v in local_features.items()
+            }
+        else:
+            raise NotImplementedError
+
+        if self.select_local_feature is not None:
+            local_features = local_features[self.select_local_feature]
+
+        return local_features

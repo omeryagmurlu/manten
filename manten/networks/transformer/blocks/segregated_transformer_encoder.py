@@ -278,8 +278,8 @@ class SegregatedFFTransformerEncoderLayer(Module):
         return self.dropout2(x)
 
 
-def _get_clones(module, N):
-    # FIXME: copy.deepcopy() is not defined on nn.module
+def _get_clones(module, N):  # noqa: N803
+    # FIXME: copy.deepcopy() is not defined on nn.module  # noqa: FIX001, TD001 (I lifted this from pytorch man)
     return ModuleList([copy.deepcopy(module) for i in range(N)])
 
 

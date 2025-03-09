@@ -1,6 +1,5 @@
 import logging
 from collections.abc import Callable
-from functools import partial
 
 import einops
 import optree

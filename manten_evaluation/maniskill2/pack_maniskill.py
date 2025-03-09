@@ -189,7 +189,7 @@ def main():
         type=str,
         required=False,
         help="The path to the file or directory",
-        default=os.getcwd() + "/data/maniskill2",
+        default=os.getcwd() + "/data/maniskill2",  # noqa: PTH109
     )
     parser.add_argument(
         "--n_proc",

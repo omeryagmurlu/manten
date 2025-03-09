@@ -62,7 +62,7 @@ class LocalAggregation(nn.Module):
             norm_args = {"norm": "bn1d"}
         super().__init__()
         if kwargs:
-            logger.warning(f"kwargs: {kwargs} are not used in {__class__.__name__}")  # noqa: G004
+            logger.warning(f"kwargs: {kwargs} are not used in {__class__.__name__}")
         channels[0] = CHANNEL_MAP[feature_type](channels[0])
         convs = []
         for i in range(len(channels) - 1):  # #layers in each blocks
@@ -432,7 +432,7 @@ class PointNextEncoder(nn.Module):
 
         self.radii = self._to_full_list(radius, radius_scaling)
         self.nsample = self._to_full_list(nsample, nsample_scaling)
-        logger.info(f"radius: {self.radii},\n nsample: {self.nsample}")  # noqa: G004
+        logger.info(f"radius: {self.radii},\n nsample: {self.nsample}")
 
         # double width after downsampling.
         channels = []

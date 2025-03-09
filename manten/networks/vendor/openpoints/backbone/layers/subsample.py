@@ -9,14 +9,15 @@ from torch.autograd import Function
 
 class BaseSampler(ABC):
     """If num_to_sample is provided, sample exactly
-        num_to_sample points. Otherwise sample floor(pos[0] * ratio) points
+    num_to_sample points. Otherwise sample floor(pos[0] * ratio) points
     """
 
     def __init__(self, ratio=None, num_to_sample=None, subsampling_param=None):
         if num_to_sample is not None:
             if (ratio is not None) or (subsampling_param is not None):
                 raise ValueError(
-                    "Can only specify ratio or num_to_sample or subsampling_param, not several !")
+                    "Can only specify ratio or num_to_sample or subsampling_param, not several !"
+                )
             self._num_to_sample = num_to_sample
 
         elif ratio is not None:
@@ -27,7 +28,8 @@ class BaseSampler(ABC):
 
         else:
             raise Exception(
-                'At least ["ratio, num_to_sample, subsampling_param"] should be defined')
+                'At least ["ratio, num_to_sample, subsampling_param"] should be defined'
+            )
 
     def __call__(self, xyz):
         return self.sample(xyz)
@@ -51,16 +53,15 @@ class BaseSampler(ABC):
 
 class RandomSample(BaseSampler):
     """Random Sample for dense data
-        Arguments:
-            xyz -- [B, N, 3]
+    Arguments:
+        xyz -- [B, N, 3]
     """
 
     def sample(self, xyz, **kwargs):  # noqa: ARG002
         if len(xyz.shape) != 3:  # noqa: PLR2004
             raise ValueError(" Expects the xyz tensor to be of dimension 3")
         B, N, _ = xyz.shape
-        idx = torch.randint(
-            0, N, (B, self._get_num_to_sample(N)), device=xyz.device)
+        idx = torch.randint(0, N, (B, self._get_num_to_sample(N)), device=xyz.device)
         sampled_xyz = torch.gather(xyz, 1, idx.unsqueeze(-1).expand(-1, -1, 3))
         # sampled_feature = torch.gather(feature, 2, idx.unsqueeze(1).repeat(1, C, 1))
         return sampled_xyz, idx
@@ -92,8 +93,7 @@ class FurthestPointSampling(Function):
         output = torch.cuda.IntTensor(B, npoint)
         temp = torch.cuda.FloatTensor(B, N).fill_(1e10)
 
-        pointnet2_cuda.furthest_point_sampling_wrapper(
-            B, N, npoint, xyz, temp, output)
+        pointnet2_cuda.furthest_point_sampling_wrapper(B, N, npoint, xyz, temp, output)
         return output
 
     @staticmethod
@@ -121,8 +121,7 @@ class GatherOperation(Function):
         _, C, N = features.size()
         output = torch.cuda.FloatTensor(B, C, npoint, device=features.device)
 
-        pointnet2_cuda.gather_points_wrapper(
-            B, C, N, npoint, features, idx, output)
+        pointnet2_cuda.gather_points_wrapper(B, C, N, npoint, features, idx, output)
 
         ctx.for_backwards = (idx, C, N)
         return output
@@ -133,10 +132,12 @@ class GatherOperation(Function):
         B, npoint = idx.size()
 
         grad_features = torch.zeros(
-            [B, C, N], dtype=torch.float, device=grad_out.device, requires_grad=True)
+            [B, C, N], dtype=torch.float, device=grad_out.device, requires_grad=True
+        )
         grad_out_data = grad_out.data.contiguous()
         pointnet2_cuda.gather_points_grad_wrapper(
-            B, C, N, npoint, grad_out_data, idx, grad_features.data)
+            B, C, N, npoint, grad_out_data, idx, grad_features.data
+        )
         return grad_features, None
 
 
@@ -145,39 +146,42 @@ gather_operation = GatherOperation.apply
 
 
 def fps(data, number):
-    '''
-        data B N C
-        number int
-    '''
+    """
+    data B N C
+    number int
+    """
     fps_idx = furthest_point_sample(data[:, :, :3].contiguous(), number)
     fps_data = torch.gather(
-        data, 1, fps_idx.unsqueeze(-1).long().expand(-1, -1, data.shape[-1]))
+        data, 1, fps_idx.unsqueeze(-1).long().expand(-1, -1, data.shape[-1])
+    )
     return fps_data
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     import time
 
     B, C, N = 2, 3, 10000
     K = 16
-    device = 'cuda'
+    device = "cuda"
     points = torch.randn([B, N, 3], device=device, dtype=torch.float)
-    print(points.shape, '\n', points)
+    print(points.shape, "\n", points)
 
     nsample = 4096
     idx = furthest_point_sample(points, nsample)
 
     st = time.time()
     for _ in range(100):
-        query1 = torch.gather(
-            points, 1, idx.long().unsqueeze(-1).expand(-1, -1, 3))
+        query1 = torch.gather(points, 1, idx.long().unsqueeze(-1).expand(-1, -1, 3))
     print(time.time() - st)
     print(query1.shape)
 
     st = time.time()
     for _ in range(100):
-        query2 = gather_operation(points.transpose(
-            1, 2).contiguous(), idx).transpose(1, 2).contiguous()
+        query2 = (
+            gather_operation(points.transpose(1, 2).contiguous(), idx)
+            .transpose(1, 2)
+            .contiguous()
+        )
     print(time.time() - st)
     print(query2.shape)
 

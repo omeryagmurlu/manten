@@ -157,7 +157,7 @@ class ConditionalUnet1D(nn.Module):
         )
         cond_dim = dsed + global_cond_dim
 
-        in_out = list(zip(all_dims[:-1], all_dims[1:], strict=True))
+        in_out = list(zip(all_dims[:-1], all_dims[1:], strict=True))  # noqa: RUF007
         mid_dim = all_dims[-1]
         self.mid_modules = nn.ModuleList(
             [

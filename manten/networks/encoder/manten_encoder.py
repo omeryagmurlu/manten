@@ -24,9 +24,9 @@ class MantenEncoder(nn.Module):
         super().__init__()
 
         assert len(train_modes) > 0, "At least one train mode must be provided"
-        assert all(mode in ["2d", "3d"] for mode in train_modes), (
-            "Train modes must be either 2d or 3d"
-        )
+        assert all(
+            mode in ["2d", "3d"] for mode in train_modes
+        ), "Train modes must be either 2d or 3d"
 
         if state_shape is not None:
             self.state_encoder = state_encoder(state_shape=state_shape)

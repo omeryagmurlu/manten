@@ -1,7 +1,8 @@
-""" MLP module w/ dropout and configurable activation layer
+"""MLP module w/ dropout and configurable activation layer
 
 Hacked together by / Copyright 2020 Ross Wightman
 """
+
 from torch import nn
 
 from . import create_act, create_norm
@@ -9,14 +10,19 @@ from .helpers import to_2tuple
 
 
 class Mlp(nn.Module):
-    """ MLP as used in Vision Transformer, MLP-Mixer and related networks
-    """
+    """MLP as used in Vision Transformer, MLP-Mixer and related networks"""
 
-    def __init__(self,
-                 in_features, hidden_features=None, out_features=None,
-                 act_args=None, norm_args=None, drop=0.):
+    def __init__(
+        self,
+        in_features,
+        hidden_features=None,
+        out_features=None,
+        act_args=None,
+        norm_args=None,
+        drop=0.0,
+    ):
         if act_args is None:
-            act_args = {'act': "gelu"}
+            act_args = {"act": "gelu"}
         super().__init__()
         out_features = out_features or in_features
         hidden_features = hidden_features or in_features
@@ -38,14 +44,15 @@ class Mlp(nn.Module):
 
 
 class GluMlp(nn.Module):
-    """ MLP w/ GLU style gating
+    """MLP w/ GLU style gating
     See: https://arxiv.org/abs/1612.08083, https://arxiv.org/abs/2002.05202
     """
 
-    def __init__(self, in_features, hidden_features=None, out_features=None,
-                 act_args=None, drop=0.):
+    def __init__(
+        self, in_features, hidden_features=None, out_features=None, act_args=None, drop=0.0
+    ):
         if act_args is None:
-            act_args = {'act': "sigmoid"}
+            act_args = {"act": "sigmoid"}
         super().__init__()
         out_features = out_features or in_features
         hidden_features = hidden_features or in_features
@@ -75,13 +82,19 @@ class GluMlp(nn.Module):
 
 
 class GatedMlp(nn.Module):
-    """ MLP as used in gMLP
-    """
+    """MLP as used in gMLP"""
 
-    def __init__(self, in_features, hidden_features=None, out_features=None, act_args=None,
-                 gate_layer=None, drop=0.):
+    def __init__(
+        self,
+        in_features,
+        hidden_features=None,
+        out_features=None,
+        act_args=None,
+        gate_layer=None,
+        drop=0.0,
+    ):
         if act_args is None:
-            act_args = {'act': "gelu"}
+            act_args = {"act": "gelu"}
         super().__init__()
         out_features = out_features or in_features
         hidden_features = hidden_features or in_features
@@ -110,15 +123,19 @@ class GatedMlp(nn.Module):
 
 
 class ConvMlp(nn.Module):
-    """ MLP using 1x1 convs that keeps spatial dims
-    """
+    """MLP using 1x1 convs that keeps spatial dims"""
 
     def __init__(
-            self, in_features, hidden_features=None, out_features=None,
-            act_args=None,
-            norm_args=None, drop=0.):
+        self,
+        in_features,
+        hidden_features=None,
+        out_features=None,
+        act_args=None,
+        norm_args=None,
+        drop=0.0,
+    ):
         if act_args is None:
-            act_args = {'act': "gelu"}
+            act_args = {"act": "gelu"}
         super().__init__()
         out_features = out_features or in_features
         hidden_features = hidden_features or in_features

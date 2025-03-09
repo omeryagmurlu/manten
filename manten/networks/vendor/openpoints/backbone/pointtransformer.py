@@ -193,7 +193,7 @@ class PointTransformerBlock(nn.Module):
     expansion = 1
 
     def __init__(self, in_planes, planes, share_planes=8, nsample=16, **kwargs):
-        super(PointTransformerBlock, self).__init__()
+        super().__init__()
         self.linear1 = nn.Linear(in_planes, planes, bias=False)
         self.bn1 = nn.BatchNorm1d(planes)
         self.transformer2 = PointTransformerLayer(planes, planes, share_planes, nsample)
@@ -217,7 +217,7 @@ class EdgeConvBlock(nn.Module):
     expansion = 1
 
     def __init__(self, in_planes, planes, share_planes=8, nsample=16, mid_res=False):
-        super(EdgeConvBlock, self).__init__()
+        super().__init__()
         self.linear1 = nn.Linear(in_planes, planes, bias=False)
         self.bn1 = nn.BatchNorm1d(planes)
         self.local_aggr = PointNet2EdgeConvLayer(planes, planes, share_planes, nsample)

@@ -4,9 +4,10 @@ from torch.autograd import Function
 
 
 class ThreeNN(Function):
-
     @staticmethod
-    def forward(ctx, unknown: torch.Tensor, known: torch.Tensor) -> tuple[torch.Tensor, torch.Tensor]:  # noqa: ARG004
+    def forward(
+        ctx, unknown: torch.Tensor, known: torch.Tensor
+    ) -> tuple[torch.Tensor, torch.Tensor]:
         """
         Find the three nearest neighbors of unknown in known
         :param ctx:
@@ -36,10 +37,11 @@ three_nn = ThreeNN.apply
 
 
 class ThreeInterpolate(Function):
-
     @staticmethod
     @torch.cuda.amp.custom_fwd(cast_inputs=torch.float32)
-    def forward(ctx, features: torch.Tensor, idx: torch.Tensor, weight: torch.Tensor) -> torch.Tensor:
+    def forward(
+        ctx, features: torch.Tensor, idx: torch.Tensor, weight: torch.Tensor
+    ) -> torch.Tensor:
         """
         Performs weight linear interpolation on 3 features
         :param ctx:
@@ -62,7 +64,9 @@ class ThreeInterpolate(Function):
         return output
 
     @staticmethod
-    def backward(ctx, grad_out: torch.Tensor) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
+    def backward(
+        ctx, grad_out: torch.Tensor
+    ) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
         """
         :param ctx:
         :param grad_out: (B, C, N) tensor with gradients of outputs
@@ -74,10 +78,12 @@ class ThreeInterpolate(Function):
         idx, weight, m = ctx.three_interpolate_for_backward
         B, c, n = grad_out.size()
 
-        grad_features = torch.zeros([B, c, m], device='cuda', requires_grad=True)
+        grad_features = torch.zeros([B, c, m], device="cuda", requires_grad=True)
         grad_out_data = grad_out.data.contiguous()
 
-        pointnet2_cuda.three_interpolate_grad_wrapper(B, c, n, m, grad_out_data, idx, weight, grad_features.data)
+        pointnet2_cuda.three_interpolate_grad_wrapper(
+            B, c, n, m, grad_out_data, idx, weight, grad_features.data
+        )
         return grad_features, None, None
 
 

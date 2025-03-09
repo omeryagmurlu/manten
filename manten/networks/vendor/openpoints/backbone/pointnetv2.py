@@ -224,7 +224,7 @@ class PointNet2Encoder(nn.Module):
     ):
         super().__init__()
         if kwargs:
-            logging.warning(f"kwargs: {kwargs} are not used in {__class__.__name__}")  # noqa: G004
+            logging.warning(f"kwargs: {kwargs} are not used in {__class__.__name__}")
         stages = len(strides)
         self.strides = strides
         self.blocks = blocks if mlps is None else [len(mlp) for mlp in mlps]
@@ -239,8 +239,8 @@ class PointNet2Encoder(nn.Module):
         )
         self.radius = radius
         self.num_samples = num_samples
-        logging.info(f"radius is modified to {radius}")  # noqa: G004
-        logging.info(f"num_samples is modified to {num_samples}")  # noqa: G004
+        logging.info(f"radius is modified to {radius}")
+        logging.info(f"num_samples is modified to {num_samples}")
 
         # patchify stem
         self.stem_conv = stem_conv
@@ -272,7 +272,7 @@ class PointNet2Encoder(nn.Module):
                     mlps_temp += [width]
                     mlps.append([mlps_temp] + [[width] * layers] * (self.blocks[i] - 1))
 
-            logging.info(f"channels is modified to {mlps}")  # noqa: G004
+            logging.info(f"channels is modified to {mlps}")
         self.mlps = mlps
 
         self.SA_modules = nn.ModuleList()
@@ -431,7 +431,7 @@ class PointNet2PartDecoder(nn.Module):
     ):
         super().__init__()
         if kwargs:
-            logging.warning(f"kwargs: {kwargs} are not used in {__class__.__name__}")  # noqa: G004
+            logging.warning(f"kwargs: {kwargs} are not used in {__class__.__name__}")
         stages = len(strides)
         self.strides = strides
 
@@ -462,7 +462,7 @@ class PointNet2PartDecoder(nn.Module):
                     mlps_temp += [width]
                     mlps.append([mlps_temp] + [[width] * layers] * (self.blocks[i] - 1))
 
-            logging.info(f"channels is modified to {mlps}")  # noqa: G004
+            logging.info(f"channels is modified to {mlps}")
         self.mlps = mlps
 
         skip_channel_list = [in_channels]

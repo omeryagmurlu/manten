@@ -7,19 +7,19 @@ from torch import nn
 @torch.no_grad()
 def knn_point(k, query, support=None):
     """Get the distances and indices to a fixed number of neighbors
-        Args:
-            support ([tensor]): [B, N, C]
-            query ([tensor]): [B, M, C]
+    Args:
+        support ([tensor]): [B, N, C]
+        query ([tensor]): [B, M, C]
 
-        Returns:
-            [int]: neighbor idx. [B, M, K]
+    Returns:
+        [int]: neighbor idx. [B, M, K]
     """
     if support is None:
         support = query
     dist = torch.cdist(query, support)
     k_dist = dist.topk(k=k, dim=-1, largest=False, sorted=True)
     return k_dist.values, k_dist.indices
-    
+
 
 class KNN(nn.Module):
     """Get the distances and indices to a fixed number of neighbors
@@ -35,11 +35,8 @@ class KNN(nn.Module):
     Returns:
         (distances, indices) both of shape [B, N, `num_neighbors`]
     """
-    
-    def __init__(self, neighbors,
-                 farthest=False,
-                 sorted=True,
-                 **kwargs):
+
+    def __init__(self, neighbors, farthest=False, sorted=True, **kwargs):
         super().__init__()
         self.neighbors = neighbors
         self.farthest = farthest
@@ -58,7 +55,9 @@ class KNN(nn.Module):
         if support is None:
             support = query
         dist = torch.cdist(query, support)
-        k_dist = dist.topk(k=self.neighbors, dim=-1, largest=self.farthest, sorted=self.sorted)
+        k_dist = dist.topk(
+            k=self.neighbors, dim=-1, largest=self.farthest, sorted=self.sorted
+        )
         return k_dist.values, k_dist.indices.int()
 
 
@@ -80,12 +79,12 @@ class DenseDilated(nn.Module):
         if self.stochastic:
             if torch.rand(1) < self.epsilon and self.training:
                 num = self.k * self.dilation
-                randnum = torch.randperm(num)[:self.k]
+                randnum = torch.randperm(num)[: self.k]
                 edge_index = edge_index[:, :, randnum]
             else:
-                edge_index = edge_index[:, :, ::self.dilation]
+                edge_index = edge_index[:, :, :: self.dilation]
         else:
-            edge_index = edge_index[:, :, ::self.dilation]
+            edge_index = edge_index[:, :, :: self.dilation]
         return edge_index.contiguous()
 
 
@@ -107,5 +106,3 @@ class DilatedKNN(nn.Module):
     def forward(self, query):
         _, idx = self.knn(query, query)
         return self._dilated(idx)
-
-

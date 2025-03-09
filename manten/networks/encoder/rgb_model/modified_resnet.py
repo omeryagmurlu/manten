@@ -28,9 +28,9 @@ class ModifiedResNet(nn.Module):
     ) -> None:
         super().__init__()
 
-        assert return_global or return_intermediates, (
-            "At least one of return_intermediates or return_global must be True"
-        )
+        assert (
+            return_global or return_intermediates
+        ), "At least one of return_intermediates or return_global must be True"
         if isinstance(return_intermediates, bool) and return_intermediates:
             return_intermediates = "layer4"
         self.return_intermediates_upto = return_intermediates

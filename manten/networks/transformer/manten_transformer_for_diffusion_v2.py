@@ -46,7 +46,7 @@ class MantenTransformerV2(ModuleAttrMixin):
         ff_mult: int = 4,
         layer_kwargs: dict | None = None,
         concat_cond_dims_into_one=False,
-        causal_attn: bool = False,
+        # causal_attn: bool = False,
     ) -> None:
         if layer_kwargs is None:
             layer_kwargs = {}
@@ -109,28 +109,28 @@ class MantenTransformerV2(ModuleAttrMixin):
             num_layers=n_layer,
         )
 
-        # attention mask
-        if causal_attn:
-            # causal mask to ensure that attention is only applied to the left in the input sequence
-            # torch.nn.Transformer uses additive mask as opposed to multiplicative mask in minGPT
-            # therefore, the upper triangle should be -inf and others (including diag) should be 0.
-            sz = seq_len_input
-            mask = (torch.triu(torch.ones(sz, sz)) == 1).transpose(0, 1)
-            mask = (
-                mask.float().masked_fill(mask == 0, float("-inf")).masked_fill(mask == 1, 0.0)
-            )
-            self.register_buffer("mask", mask)
+        # # attention mask
+        # if causal_attn:
+        #     # causal mask to ensure that attention is only applied to the left in the input sequence
+        #     # torch.nn.Transformer uses additive mask as opposed to multiplicative mask in minGPT
+        #     # therefore, the upper triangle should be -inf and others (including diag) should be 0.
+        #     sz = seq_len_input
+        #     mask = (torch.triu(torch.ones(sz, sz)) == 1).transpose(0, 1)
+        #     mask = (
+        #         mask.float().masked_fill(mask == 0, float("-inf")).masked_fill(mask == 1, 0.0)
+        #     )
+        #     self.register_buffer("mask", mask)
 
-            S = seq_len_cond
-            t, s = torch.meshgrid(torch.arange(seq_len_input), torch.arange(S), indexing="ij")
-            mask = t >= (s - 1)  # add one dimension since time is the first token in cond
-            mask = (
-                mask.float().masked_fill(mask == 0, float("-inf")).masked_fill(mask == 1, 0.0)
-            )
-            self.register_buffer("memory_mask", mask)
-        else:
-            self.mask = None
-            self.memory_mask = None
+        #     S = seq_len_cond
+        #     t, s = torch.meshgrid(torch.arange(seq_len_input), torch.arange(S), indexing="ij")
+        #     mask = t >= (s - 1)  # add one dimension since time is the first token in cond
+        #     mask = (
+        #         mask.float().masked_fill(mask == 0, float("-inf")).masked_fill(mask == 1, 0.0)
+        #     )
+        #     self.register_buffer("memory_mask", mask)
+        # else:
+        #     self.mask = None
+        #     self.memory_mask = None
 
         # decoder head
         self.ln_f = nn.LayerNorm(n_emb)
@@ -140,7 +140,7 @@ class MantenTransformerV2(ModuleAttrMixin):
         self.apply(self._init_weights)
         logger.info("number of parameters: %e", sum(p.numel() for p in self.parameters()))
 
-    def _init_weights(self, module):
+    def _init_weights(self, module):  # noqa: C901
         ignore_types = (
             nn.Dropout,
             SinusoidalPosEmb,

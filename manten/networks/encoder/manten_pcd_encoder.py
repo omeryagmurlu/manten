@@ -73,7 +73,7 @@ class MantenPCDEncoder(nn.Module):
     def __init__(
         self,
         *,
-        pcd_shape: dict[str, tuple[int]],
+        pcd_shape: dict[str, tuple[int]],  # noqa: ARG002
         pcd_model: Callable[..., nn.Module],
         pcd_scaler=None,
         use_color_in_pcd: bool = False,

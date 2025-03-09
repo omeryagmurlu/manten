@@ -384,9 +384,7 @@ class PointMLPEncoder(nn.Module):
             == len(reducers)
             == len(pos_blocks)
             == len(dim_expansion)
-        ), (
-            "Please check stage number consistent for pre_blocks, pos_blocks k_neighbors, reducers."
-        )
+        ), "Please check stage number consistent for pre_blocks, pos_blocks k_neighbors, reducers."
         self.local_grouper_list = nn.ModuleList()
         self.pre_blocks_list = nn.ModuleList()
         self.pos_blocks_list = nn.ModuleList()

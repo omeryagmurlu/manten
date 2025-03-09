@@ -2,7 +2,6 @@ from functools import partial
 
 import optree
 import torch
-from torch import nn
 from x_transformers import Decoder, Encoder
 
 from manten.networks.transformer.manten_transformer_for_diffusion import (
