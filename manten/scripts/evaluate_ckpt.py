@@ -94,14 +94,14 @@ def setup_wandb(
             tags=[*tags, "did_eval_ckpt"],
             resume="must",
             id=run_id,
-            dir=output_dir + "/tracker",
+            dir=str(output_dir / "tracker"),
         )
     else:
         wandb_logger = wandb.init(
             entity=entity,
             project=project,
             tags=["did_eval_ckpt"],
-            dir=output_dir + "/tracker",
+            dir=str(output_dir / "tracker"),
         )
 
     return wandb_logger
