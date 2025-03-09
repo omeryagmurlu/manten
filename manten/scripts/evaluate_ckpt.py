@@ -6,7 +6,6 @@ from pathlib import Path
 
 import hydra
 import torch
-from accelerate import Accelerator
 from omegaconf import DictConfig, OmegaConf
 from tabulate import tabulate
 
@@ -164,8 +163,6 @@ def main(args):
     if (checkpoint_dir / "ema_model.safetensors").exists():
         ema_params.append(True)
 
-    accelerator = Accelerator()
-
     if not hasattr(config, "custom_evaluator") or config.custom_evaluator is None:
         raise ValueError(
             "No custom_evaluator found in train config, please provide one in order to use automatic checkpoint evaluation"
@@ -177,8 +174,6 @@ def main(args):
     )
     for ema in ema_params:
         agent = load_agent(accel_path, checkpoint=checkpoint, device=args.device, use_ema=ema)
-        agent = accelerator.prepare(agent)
-        agent = accelerator.unwrap_model(agent)
         for idx, custom_evaluator in enumerate(custom_evaluators):
             proc_name = "custom_eval"
             if ema:

@@ -26,11 +26,19 @@
       "name": "evaluate_ckpt.py with Arguments",
       "type": "debugpy",
       "request": "launch",
-      "module": "accelerate.commands.launch",
-      // "program": "manten/scripts/evaluate_ckpt.py",
+      "program": "manten/scripts/evaluate_ckpt.py",
       "console": "integratedTerminal",
-      "args": "--num_processes=1 manten/scripts/evaluate_ckpt.py ${command:pickArgs}",
+      "args": "${command:pickArgs}",
       "justMyCode": false
-    }
+    },
+    {
+      "name": "train.py (accel) with Arguments",
+      "type": "debugpy",
+      "request": "launch",
+      "module": "accelerate.commands.launch",
+      "console": "integratedTerminal",
+      "args": "--num_processes=1 manten/scripts/train.py ${command:pickArgs}",
+      "justMyCode": false
+    },
   ]
 }

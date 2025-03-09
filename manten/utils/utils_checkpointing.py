@@ -1,3 +1,4 @@
+from collections import OrderedDict
 from logging import getLogger
 from pathlib import Path
 
@@ -18,11 +19,31 @@ def load_model_from_safetensors(model, path, device=None):
     logger.info("Loaded safetensors from %s", path)
 
 
+def remove_prefix(text, prefix):
+    if text.startswith(prefix):
+        return text[len(prefix) :]
+    return text
+
+
+def repair_state_dict(in_state_dict):
+    """torch.compile add a prefix to the state_dict keys, this function removes it
+    see: https://github.com/pytorch/pytorch/issues/101107
+    """
+    pairings = [(src_key, remove_prefix(src_key, "_orig_mod.")) for src_key in in_state_dict]
+    if all(src_key == dest_key for src_key, dest_key in pairings):
+        return in_state_dict
+
+    return OrderedDict({dest_key: in_state_dict[src_key] for src_key, dest_key in pairings})
+
+
 def save_model_to_safetensors(accelerator, model, path):
     # we can directly use safetensors, but accelerate also provides a convenient wrapper for it
     from accelerate.utils import save
 
     state_dict = accelerator.get_state_dict(model, unwrap=True)
+
+    state_dict = repair_state_dict(state_dict)
+
     save(state_dict, path, safe_serialization=True)
 
 

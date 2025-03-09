@@ -1,0 +1,24 @@
+# @package _global_
+
+defaults:
+  - common
+
+datamodule:
+  _load_count: 25
+
+_lr: 0.001
+
+training:
+  num_epochs: 5
+  num_global_steps: .inf
+  max_steps: 50
+  sanity_check: False
+  val: False
+  eval_train: False
+  eval_test: False
+  custom_eval: False
+  save:
+    every_n_epochs: 5
+    skip_first_epochs: 0
+
+  log_every_n_steps: 5
