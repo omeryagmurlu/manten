@@ -81,9 +81,51 @@ def load_agent(
     agent = hydra.utils.instantiate(agent_cfg)
     if device is not None:
         agent.to(device)
+
+    pre_param_stats = get_param_stats(agent)
     load_model_from_safetensors(agent, model_filepath, device=device)
+    post_param_stats = get_param_stats(agent)
+    compare_param_stats(pre_param_stats, post_param_stats)
 
     return agent
+
+
+def get_param_stats(agent):
+    return {
+        k: {
+            "mean": v.mean().detach().cpu().numpy(),
+            "std": v.std().detach().cpu().numpy(),
+            "min": v.min().detach().cpu().numpy(),
+            "max": v.max().detach().cpu().numpy(),
+        }
+        for k, v in agent.named_parameters()
+    }
+
+
+def compare_param_stats(pre_param_stats, post_param_stats):
+    import numpy as np
+
+    problematic_params = []
+
+    for k in pre_param_stats:
+        if "_ModuleAttrMixin__dummy_variable" in k:
+            continue
+
+        pre = pre_param_stats[k]
+        post = post_param_stats[k]
+        for stat in pre:
+            pre_stat = pre[stat]
+            post_stat = post[stat]
+            if np.allclose(pre_stat, post_stat):
+                logger.warning(f"Parameter {k} {stat} is the same before and after loading")
+                problematic_params.append(k)
+
+    if problematic_params:
+        logger.warning(
+            f"Found {len(problematic_params)} parameters with the same stats before and after loading: {problematic_params}"
+        )
+    else:
+        logger.info("No parameters with the same stats before and after loading")
 
 
 def save_agent_config(checkpoint_dir, agent_cfg):
