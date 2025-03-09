@@ -62,7 +62,7 @@ datamodule:
   _control_mode: pd_ee_delta_pose
   _rotation_transform: rotation_6d
 
-  _batch_size: 96
+  _batch_size: 112
   _train_target_iters: 10000
   _num_workers: 4
   _prefetch_factor: 2
