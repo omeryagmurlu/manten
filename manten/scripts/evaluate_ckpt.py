@@ -1,10 +1,12 @@
 import argparse
 import datetime
+import json
 import logging
 from pathlib import Path
 
 import hydra
 import torch
+from accelerate import Accelerator
 from omegaconf import DictConfig, OmegaConf
 from tabulate import tabulate
 
@@ -67,7 +69,14 @@ def setup_output_dir(hydra_config, ckpt_name, debug=False):
 
 
 def setup_wandb(
-    *, entity=None, project=None, resume_run: bool, from_train, train_path, output_dir
+    *,
+    entity=None,
+    project=None,
+    resume_run: bool,
+    from_train,
+    train_path,
+    output_dir,
+    debug=False,
 ):
     import wandb
 
@@ -95,6 +104,7 @@ def setup_wandb(
             resume="must",
             id=run_id,
             dir=str(output_dir / "tracker"),
+            mode="disabled" if debug else "online",
         )
     else:
         wandb_logger = wandb.init(
@@ -102,6 +112,7 @@ def setup_wandb(
             project=project,
             tags=["did_eval_ckpt"],
             dir=str(output_dir / "tracker"),
+            mode="disabled" if debug else "online",
         )
 
     return wandb_logger
@@ -117,6 +128,9 @@ def main(args):
     seed = args.seed if args.seed is not None else config.get("seed", None)
     debug = args.debug if args.debug is not None else config.get("debug", None)
 
+    if len(args.custom_eval_json) != 0:
+        debug = debug or True
+
     output_dir = setup_output_dir(hydra_config, args.ckpt_name, debug=bool(debug))
     wandb_logger = setup_wandb(
         entity=args.wandb_entity,
@@ -125,6 +139,7 @@ def main(args):
         from_train=OmegaConf.to_object(config.accelerator_init_trackers),
         train_path=train_path,
         output_dir=output_dir,
+        debug=bool(debug),
     )
     # validate again so that it's logged in the log file too
     validate_train_path(args.train_path)
@@ -149,6 +164,8 @@ def main(args):
     if (checkpoint_dir / "ema_model.safetensors").exists():
         ema_params.append(True)
 
+    accelerator = Accelerator()
+
     if not hasattr(config, "custom_evaluator") or config.custom_evaluator is None:
         raise ValueError(
             "No custom_evaluator found in train config, please provide one in order to use automatic checkpoint evaluation"
@@ -160,16 +177,23 @@ def main(args):
     )
     for ema in ema_params:
         agent = load_agent(accel_path, checkpoint=checkpoint, device=args.device, use_ema=ema)
+        agent = accelerator.prepare(agent)
+        agent = accelerator.unwrap_model(agent)
         for idx, custom_evaluator in enumerate(custom_evaluators):
             proc_name = "custom_eval"
             if ema:
                 proc_name = f"{proc_name}-ema"
             proc_name = f"{proc_name}-{idx}"
-            custom_eval = custom_evaluator(
-                output_dir=f"{output_dir}/{checkpoint}/{proc_name}",
-                # num_eval_episodes=15,
-            )
-            with torch.no_grad():  # just double checking lol
+            if callable(custom_evaluator):
+                custom_eval = custom_evaluator(
+                    output_dir=f"{output_dir}/{checkpoint}/{proc_name}",
+                    **args.custom_eval_json,
+                )
+            else:
+                custom_eval = custom_evaluator
+            proc_name = f"{proc_name}-{custom_eval.eval_name}"
+
+            with torch.inference_mode(), torch.no_grad():
                 agent.eval()
                 eval_infos, rich_media = custom_eval.evaluate(agent)
 
@@ -238,6 +262,12 @@ def parse_args():
         type=bool,
         default=True,
         help="Resume the wandb run inferred from train config.",
+    )
+    parser.add_argument(
+        "--custom_eval_json",
+        type=json.loads,
+        default="{}",
+        help="Custom evaluation configuration in json format",
     )
     return parser.parse_args()
 

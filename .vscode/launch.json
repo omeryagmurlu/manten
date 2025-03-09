@@ -26,9 +26,10 @@
       "name": "evaluate_ckpt.py with Arguments",
       "type": "debugpy",
       "request": "launch",
-      "program": "manten/scripts/evaluate_ckpt.py",
+      "module": "accelerate.commands.launch",
+      // "program": "manten/scripts/evaluate_ckpt.py",
       "console": "integratedTerminal",
-      "args": "${command:pickArgs}",
+      "args": "--num_processes=1 manten/scripts/evaluate_ckpt.py ${command:pickArgs}",
       "justMyCode": false
     }
   ]
