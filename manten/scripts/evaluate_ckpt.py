@@ -167,7 +167,7 @@ def main(args):
             proc_name = f"{proc_name}-{idx}"
             custom_eval = custom_evaluator(
                 output_dir=f"{output_dir}/{checkpoint}/{proc_name}",
-                num_eval_episodes=15,
+                # num_eval_episodes=15,
             )
             with torch.no_grad():  # just double checking lol
                 agent.eval()
