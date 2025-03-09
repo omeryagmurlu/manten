@@ -1,4 +1,5 @@
 from logging import getLogger
+from pathlib import Path
 
 import hydra
 import omegaconf
@@ -25,6 +26,21 @@ def save_model_to_safetensors(accelerator, model, path):
     save(state_dict, path, safe_serialization=True)
 
 
+def get_checkpoint_dir(train_folder, checkpoint):
+    checkpoint_dir = Path(f"{train_folder}/{checkpoint}")
+    if not Path(checkpoint_dir).exists():
+        raise FileNotFoundError(f"Checkpoint directory not found at {checkpoint_dir}")
+    if Path(checkpoint_dir).is_symlink():
+        resolved_checkpoint_dir = Path(checkpoint_dir).resolve()
+        logger.info(
+            f"Resolved checkpoint alias {checkpoint_dir.name} to {resolved_checkpoint_dir}"
+        )
+        checkpoint_dir = resolved_checkpoint_dir
+        del resolved_checkpoint_dir
+
+    return checkpoint_dir
+
+
 def load_agent(
     train_folder: str,
     *,
@@ -44,21 +60,28 @@ def load_agent(
         else:
             raise ValueError(f"mode {mode} not recognized")
 
-    file_str = f"{train_folder}/{checkpoint}/%s"
+    checkpoint_dir = get_checkpoint_dir(train_folder, checkpoint)
 
+    file_str = f"{checkpoint_dir}/%s"
     if use_ema:
-        model_filename = file_str % "ema_model.safetensors"
+        model_filepath = file_str % "ema_model.safetensors"
     else:
-        model_filename = file_str % "model.safetensors"
+        model_filepath = file_str % "model.safetensors"
+    agent_cfg_filepath = file_str % "agent_config.yaml"
 
-    agent_cfg = OmegaConf.load(file_str % "agent_config.yaml")
+    if not Path(model_filepath).exists():
+        raise FileNotFoundError(f"Model file not found at {model_filepath}")
+    if not Path(agent_cfg_filepath).exists():
+        raise FileNotFoundError(f"Agent config file not found at {agent_cfg_filepath}")
+
+    agent_cfg = OmegaConf.load(agent_cfg_filepath)
     if agent_override is not None:
         agent_cfg = OmegaConf.merge(agent_cfg, agent_override)
 
     agent = hydra.utils.instantiate(agent_cfg)
     if device is not None:
         agent.to(device)
-    load_model_from_safetensors(agent, model_filename, device=device)
+    load_model_from_safetensors(agent, model_filepath, device=device)
 
     return agent
 

@@ -7,7 +7,10 @@
       "request": "launch",
       "program": "examples/segmentation/main.py",
       "console": "integratedTerminal",
-      "args": ["--cfg", "cfgs/scannet/pointnext-b.yaml"],
+      "args": [
+        "--cfg",
+        "cfgs/scannet/pointnext-b.yaml"
+      ],
       "cwd": "/home/reuss/manten/vendor/PointNeXt"
     },
     {
@@ -15,6 +18,15 @@
       "type": "debugpy",
       "request": "launch",
       "program": "manten/scripts/train.py",
+      "console": "integratedTerminal",
+      "args": "${command:pickArgs}",
+      "justMyCode": false
+    },
+    {
+      "name": "evaluate_ckpt.py with Arguments",
+      "type": "debugpy",
+      "request": "launch",
+      "program": "manten/scripts/evaluate_ckpt.py",
       "console": "integratedTerminal",
       "args": "${command:pickArgs}",
       "justMyCode": false
